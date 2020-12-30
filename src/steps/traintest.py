@@ -78,12 +78,11 @@ def train(model, train_loader, valid_loader, args):
             "epoch": n,
             "train_loss": train_loss,
             "val_loss": val_loss,
-            "val_acc": val_acc,
+            "val_acc": val_acc.cpu(),
             "best_epoch": best_epoch,
             "best_val_loss": best_val_loss,
             "time": total_time,
             "lr": lr
-
         }
 
         progress_saver.update_epoch_progess(epoch_data)

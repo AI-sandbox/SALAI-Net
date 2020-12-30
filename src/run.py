@@ -14,7 +14,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--exp", type=str, default="exp/default_exp")
 
-parser.add_argument("--train-data", type=str, default="data/chm20/test.npz")
+parser.add_argument("--train-data", type=str, default="data/chm20/train.npz")
 parser.add_argument("--valid-data", type=str, default="data/chm20/test.npz")
 
 parser.add_argument("--model", type=str, choices=["kk"],
@@ -58,6 +58,7 @@ if __name__ == '__main__':
 
     if args.model == "kk":
         model = VanillaLAINet(7)
+        # model = DevModel(7)
 
 
     if not args.resume:

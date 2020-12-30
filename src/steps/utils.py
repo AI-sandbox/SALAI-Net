@@ -28,7 +28,7 @@ class AverageMeter():
         self.count += 1
 
     def get_average(self):
-        return  self.total / self.count
+        return self.total / self.count
 
 class ProgressSaver():
 
