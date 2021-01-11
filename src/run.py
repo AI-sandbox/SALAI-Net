@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 import torchvision
 
 from steps import train
-from models import DevModel, VanillaLAINet
+from models import DevModel, VanillaConvNet
 from dataloaders import GenomeDataset
 
 parser = argparse.ArgumentParser()
@@ -17,13 +17,15 @@ parser.add_argument("--exp", type=str, default="exp/default_exp")
 parser.add_argument("--train-data", type=str, default="data/chm20/train.npz")
 parser.add_argument("--valid-data", type=str, default="data/chm20/test.npz")
 
-parser.add_argument("--model", type=str, choices=["kk"],
-                    default="kk")
+parser.add_argument("--model", type=str, choices=["VanillaConvNet"],
+                    default="VanillaConvNet")
 
 parser.add_argument("--num-epochs", type=int, default=99999999)
 parser.add_argument("-b", "--batch-size", type=int, default=32)
 parser.add_argument("--lr", type=float, default=0.01)
 parser.add_argument("--lr-decay", type=int, default=-1)
+
+parser.add_argument("--pos-emb", type=str, choices=["linpos", "trained"])
 
 parser.add_argument("--loss", type=str, default="BCE", choices=["BCE"])
 
@@ -56,9 +58,11 @@ if __name__ == '__main__':
     #     pass
     # print("loop time", time.time() - t)
 
-    if args.model == "kk":
-        model = VanillaLAINet(7)
+    if args.model == "VanillaConvNet":
+        model = VanillaConvNet(7, args.pos_emb)
         # model = DevModel(7)
+    else:
+        raise ValueError()
 
 
     if not args.resume:

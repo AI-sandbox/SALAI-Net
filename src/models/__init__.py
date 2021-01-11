@@ -1,1 +1,1 @@
-from .lai_models import DevModel, VanillaLAINet
+from .lai_models import DevModel, VanillaConvNet
