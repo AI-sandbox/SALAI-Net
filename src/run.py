@@ -9,6 +9,7 @@ import torchvision
 from steps import train
 from models import DevModel, VanillaConvNet
 from dataloaders import GenomeDataset
+from steps import build_transforms
 
 parser = argparse.ArgumentParser()
 
@@ -25,11 +26,15 @@ parser.add_argument("-b", "--batch-size", type=int, default=32)
 parser.add_argument("--lr", type=float, default=0.01)
 parser.add_argument("--lr-decay", type=int, default=-1)
 
-parser.add_argument("--pos-emb", type=str, choices=["linpos", "trained"])
+parser.add_argument("--pos-emb", type=str, choices=["linpos", "trained1",
+                                                              "trained2"], default=None)
 
 parser.add_argument("--loss", type=str, default="BCE", choices=["BCE"])
 
 parser.add_argument("--resume", dest="resume", action='store_true')
+
+parser.add_argument("--seq-len", type=int, default=516800)
+parser.add_argument("--n-classes", type=int, default=7)
 
 if __name__ == '__main__':
 
@@ -42,10 +47,7 @@ if __name__ == '__main__':
             args = pickle.load(f)
             args.resume = True
 
-    transforms = []
-
-    transforms = torchvision.transforms.Compose(transforms)
-
+    transforms = build_transforms(args)
 
     train_dataset = GenomeDataset(data=args.train_data, transforms=transforms)
     valid_dataset = GenomeDataset(data=args.valid_data, transforms=transforms)
@@ -59,7 +61,7 @@ if __name__ == '__main__':
     # print("loop time", time.time() - t)
 
     if args.model == "VanillaConvNet":
-        model = VanillaConvNet(7, args.pos_emb)
+        model = VanillaConvNet(args)
         # model = DevModel(7)
     else:
         raise ValueError()

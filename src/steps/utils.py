@@ -3,6 +3,8 @@ import pickle
 
 import torch.nn as nn
 
+from torchvision import transforms
+
 def ancestry_accuracy(prediction, target):
     b, l, c = prediction.shape
     prediction = prediction.reshape(b*l, c)
@@ -84,3 +86,25 @@ def adjust_learning_rate(base_lr, lr_decay, optimizer, epoch):
         param_group['lr'] = lr
 
     return lr
+
+
+class EncodeBinary:
+
+    def __call__(self, inp):
+
+        # 0 -> -1
+        # 1 -> 1
+        inp["vcf"] = inp["vcf"] * 2 - 1
+
+        return inp
+
+
+def build_transforms(args):
+
+    transforms_list = []
+
+    transforms_list.append(EncodeBinary())
+
+    transforms_list = transforms.Compose(transforms_list)
+
+    return transforms_list

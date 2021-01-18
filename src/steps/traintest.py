@@ -22,6 +22,8 @@ def train(model, train_loader, valid_loader, args):
 
     lr = args.lr
 
+
+    init_epoch = 0
     if args.resume:
         progress_saver.load_progress()
         init_epoch, best_val_loss, start_time = progress_saver.get_resume_stats()
@@ -42,7 +44,7 @@ def train(model, train_loader, valid_loader, args):
 
     model.to(device)
 
-    for n in range(args.num_epochs):
+    for n in range(init_epoch, args.num_epochs):
         model.train()
         train_loss_meter.reset()
 
