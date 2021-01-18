@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as f
 
+
 class DevModel(nn.Module):
     def __init__(self, n_classes):
         super(DevModel, self).__init__()
