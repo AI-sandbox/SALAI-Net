@@ -11,6 +11,8 @@ from models import DevModel, VanillaConvNet
 from dataloaders import GenomeDataset
 from steps import build_transforms
 
+from models.lainet import LAINetOriginal
+
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--exp", type=str, default="exp/default_exp")
@@ -18,7 +20,8 @@ parser.add_argument("--exp", type=str, default="exp/default_exp")
 parser.add_argument("--train-data", type=str, default="data/chm20/train.npz")
 parser.add_argument("--valid-data", type=str, default="data/chm20/test.npz")
 
-parser.add_argument("--model", type=str, choices=["VanillaConvNet"],
+parser.add_argument("--model", type=str, choices=["VanillaConvNet",
+                                                  "LAINet"],
                     default="VanillaConvNet")
 
 parser.add_argument("--num-epochs", type=int, default=99999999)
@@ -27,7 +30,9 @@ parser.add_argument("--lr", type=float, default=0.01)
 parser.add_argument("--lr-decay", type=int, default=-1)
 
 parser.add_argument("--pos-emb", type=str, choices=["linpos", "trained1",
-                                                              "trained2"], default=None)
+                                                              "trained2",
+                                                              "trained3"], default=None)
+parser.add_argument("--win-size", type=int, default=400)
 
 parser.add_argument("--loss", type=str, default="BCE", choices=["BCE"])
 
@@ -39,6 +44,8 @@ parser.add_argument("--n-classes", type=int, default=7)
 if __name__ == '__main__':
 
     args = parser.parse_args()
+
+
 
     print(args)
     if args.resume:
@@ -63,9 +70,12 @@ if __name__ == '__main__':
     if args.model == "VanillaConvNet":
         model = VanillaConvNet(args)
         # model = DevModel(7)
+
+    elif args.model == "LAINet":
+        model = LAINetOriginal(args.seq_len, args.n_classes,
+                               window_size=args.win_size, is_haploid=True)
     else:
         raise ValueError()
-
 
     if not args.resume:
         if os.path.isdir(args.exp):

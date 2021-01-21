@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as f
 
-
 class DevModel(nn.Module):
     def __init__(self, n_classes):
         super(DevModel, self).__init__()
@@ -21,9 +20,6 @@ class DevModel(nn.Module):
         # B x C x L -> B x L x C
         out = out.permute(0, 2, 1)
 
-        print(out.shape)
-        quit()
-
         return out
 
 class VanillaConvNet(nn.Module):
@@ -35,10 +31,11 @@ class VanillaConvNet(nn.Module):
         ninp = 1
         fchid = 30
         fcout = convin = 30
+        convhidd = 30
         if args.pos_emb is None:
             self.pos_emb = None
-        # Concatenate a fixed embedding with linear dependency with the positon index
-        # emb(n) = n / N
+        # Concatenate a fixed embedding with linear dependency with the position
+        # index: emb(n) = n / N
         elif args.pos_emb == "linpos":
             ninp += 1
             self.pos_emb = LinearPositionalEmbedding()
@@ -48,15 +45,22 @@ class VanillaConvNet(nn.Module):
             self.pos_emb = TrainedPositionalEmbedding(args.seq_len)
         # Concatenate a trainable vector after the sliding fully connected
         elif args.pos_emb == "trained2":
-            self.pos_emb = TrainedPositionalEmbedding(args.seq_len // 400)
+            self.pos_emb = TrainedPositionalEmbedding(args.seq_len // args.win_size)
+            convin += 1
+
+        elif args.pos_emb == "trained3":
+            self.pos_emb1 = TrainedPositionalEmbedding(args.seq_len)
+            ninp += 1
+            self.pos_emb2 = TrainedPositionalEmbedding(args.seq_len // args.win_size)
             convin += 1
 
         else:
             raise ValueError()
 
-        self.conv1 = nn.Conv1d(ninp, fchid, kernel_size=400, stride=400, padding=0)
+        self.conv1 = nn.Conv1d(ninp, fchid, kernel_size=args.win_size, stride=args.win_size, padding=0)
         self.conv2 = nn.Conv1d(fchid, fcout, kernel_size=1, stride=1)
-        self.conv3 = nn.Conv1d(convin, args.n_classes, kernel_size=75, padding=37)
+        self.conv3 = nn.Conv1d(convin, convhidd, kernel_size=75, padding=37)
+        self.conv4 = nn.Conv1d(convhidd, args.n_classes, kernel_size=75, padding=37)
         self.bn1 = nn.BatchNorm1d(30)
 
 
@@ -67,16 +71,26 @@ class VanillaConvNet(nn.Module):
             out = self.pos_emb.apply_embedding(out)
         elif self.args.pos_emb == "trained1":
             out = self.pos_emb(out)
+        elif self.args.pos_emb == "trained3":
+            out = self.pos_emb1(out)
 
         out = self.conv1(out)
         out = f.relu(self.bn1(out))
 
-        out = f.relu(self.conv2(out))
+        out = h1 = self.conv2(out)
+        out = f.relu(out)
+
+
         if self.args.pos_emb == "trained2":
             out = self.pos_emb(out)
+        if self.args.pos_emb == "trained3":
+            out = self.pos_emb2(out)
 
         # removed the relu from the last layer
-        out = (self.conv3(out))
+        out = f.relu(self.conv3(out))
+        out = self.conv4(out)
+        #Skip connection
+        # out = out + h1
         out = f.interpolate(out, size=self.args.seq_len)
         out = out.permute(0, 2, 1)
         return out
@@ -116,11 +130,19 @@ class TrainedPositionalEmbedding(nn.Module):
         inp = torch.cat((inp, self.emb.repeat(bs, 1, 1)), dim=1)
         return inp
 
+    def add_embedding(self, inp):
+        return inp + self.emb
+
     def apply_embedding(self, inp):
         if self.operation == "concat":
             return self.concatenate_embedding(inp)
+        if self.operation == "add":
+            return self.add_embedding(inp)
 
     def forward(self, inp):
         return self.apply_embedding(inp)
+
+# Sliding Fully Connected + Transformer Encoder
+class SFC_TransfEncoder()
 
 

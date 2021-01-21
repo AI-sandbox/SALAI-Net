@@ -8,6 +8,8 @@ import time
 def train(model, train_loader, valid_loader, args):
 
     device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("device:", device)
+
     model.to(device)
 
     criterion = ReshapedCrossEntropyLoss()
@@ -53,7 +55,11 @@ def train(model, train_loader, valid_loader, args):
 
         for i, batch in enumerate(train_loader):
             # break
-            out = model(batch["vcf"].to(device))
+
+            if args.model == "VanillaConvNet":
+                out = model(batch["vcf"].to(device))
+            elif args.model == "LAINet":
+                out_base, out = model(batch["vcf"].to(device))
 
             loss = criterion(out, batch["labels"].to(device))
 
@@ -63,7 +69,7 @@ def train(model, train_loader, valid_loader, args):
 
             train_loss_meter.update(loss.item())
 
-        val_acc, val_loss = validate(model, valid_loader, criterion)
+        val_acc, val_loss = validate(model, valid_loader, criterion, args)
         train_loss = train_loss_meter.get_average()
 
         total_time = time.time() - init_time
@@ -93,7 +99,7 @@ def train(model, train_loader, valid_loader, args):
         print("epoch #", n, ":\tVal acc:", val_acc.item(), "\ttime:", time.time()- init_time)
 
 
-def validate(model, val_loader, criterion):
+def validate(model, val_loader, criterion, args):
 
     with torch.no_grad():
 
@@ -108,7 +114,11 @@ def validate(model, val_loader, criterion):
 
         for i, batch in enumerate(val_loader):
 
-            out = model(batch["vcf"].to(device))
+            if args.model == "VanillaConvNet":
+                out = model(batch["vcf"].to(device))
+            elif args.model == "LAINet":
+                out_base, out = model(batch["vcf"].to(device))
+
             batch["labels"] = batch["labels"].to(device)
 
             acc = acc + ancestry_accuracy(out, batch["labels"])
