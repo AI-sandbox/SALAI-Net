@@ -29,14 +29,25 @@ parser.add_argument("-b", "--batch-size", type=int, default=32)
 parser.add_argument("--lr", type=float, default=0.01)
 parser.add_argument("--lr-decay", type=int, default=-1)
 
-parser.add_argument("--pos-emb", type=str, choices=["linpos", "trained1",
-                                                              "trained2",
-                                                              "trained3"], default=None)
+parser.add_argument("--smoother", type=str, choices=["1conv",
+                                                     "2conv",
+                                                     "1TransfEnc"],
+                    default="1conv")
+parser.add_argument("--pos-emb", type=str, choices=["linpos",
+                                                    "trained1",
+                                                    "trained2",
+                                                    "trained3",
+                                                    "trained1transfemb",
+                                                    "trained1dim4"],
+                    default=None)
+parser.add_argument("--transf-emb", dest="transf_emb", action='store_true')
+
 parser.add_argument("--win-size", type=int, default=400)
 
 parser.add_argument("--loss", type=str, default="BCE", choices=["BCE"])
 
 parser.add_argument("--resume", dest="resume", action='store_true')
+
 
 parser.add_argument("--seq-len", type=int, default=516800)
 parser.add_argument("--n-classes", type=int, default=7)
@@ -45,14 +56,22 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-
-
-    print(args)
     if args.resume:
         assert (bool(args.exp))
         with open("%s/args.pckl" % args.exp, "rb") as f:
             args = pickle.load(f)
             args.resume = True
+    print(args)
+
+    if args.model == "VanillaConvNet":
+        model = VanillaConvNet(args)
+        # model = DevModel(7)
+
+    elif args.model == "LAINet":
+        model = LAINetOriginal(args.seq_len, args.n_classes,
+                               window_size=args.win_size, is_haploid=True)
+    else:
+        raise ValueError()
 
     transforms = build_transforms(args)
 
@@ -67,15 +86,7 @@ if __name__ == '__main__':
     #     pass
     # print("loop time", time.time() - t)
 
-    if args.model == "VanillaConvNet":
-        model = VanillaConvNet(args)
-        # model = DevModel(7)
 
-    elif args.model == "LAINet":
-        model = LAINetOriginal(args.seq_len, args.n_classes,
-                               window_size=args.win_size, is_haploid=True)
-    else:
-        raise ValueError()
 
     if not args.resume:
         if os.path.isdir(args.exp):
@@ -87,3 +98,4 @@ if __name__ == '__main__':
         pickle.dump(args, f)
 
     train(model, train_loader, valid_loader, args)
+

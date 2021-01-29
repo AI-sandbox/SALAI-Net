@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as f
 
+import math
+
 class DevModel(nn.Module):
     def __init__(self, n_classes):
         super(DevModel, self).__init__()
@@ -30,8 +32,9 @@ class VanillaConvNet(nn.Module):
         super(VanillaConvNet, self).__init__()
         ninp = 1
         fchid = 30
-        fcout = convin = 30
-        convhidd = 30
+        fcout = smooth_in = 30
+        smooth_hidd = 30
+
         if args.pos_emb is None:
             self.pos_emb = None
         # Concatenate a fixed embedding with linear dependency with the position
@@ -40,33 +43,51 @@ class VanillaConvNet(nn.Module):
             ninp += 1
             self.pos_emb = LinearPositionalEmbedding()
         # Concatenate on the input a trainable vector
-        elif args.pos_emb == "trained1":
+        elif args.pos_emb == "trained1" or args.pos_emb == "trained1transfemb":
             ninp += 1
             self.pos_emb = TrainedPositionalEmbedding(args.seq_len)
+            self.transf_emb = PositionalEncoding(smooth_in, max_len=args.seq_len // args.win_size, dropout=0.1)
+
         # Concatenate a trainable vector after the sliding fully connected
         elif args.pos_emb == "trained2":
             self.pos_emb = TrainedPositionalEmbedding(args.seq_len // args.win_size)
-            convin += 1
+            smooth_in += 1
 
         elif args.pos_emb == "trained3":
             self.pos_emb1 = TrainedPositionalEmbedding(args.seq_len)
             ninp += 1
             self.pos_emb2 = TrainedPositionalEmbedding(args.seq_len // args.win_size)
-            convin += 1
+            smooth_in += 1
+
+        if self.args.transf_emb == True:
+            self.transf_emb = PositionalEncoding(smooth_in, max_len=args.seq_len // args.win_size, dropout=0.1)
 
         else:
             raise ValueError()
 
-        self.conv1 = nn.Conv1d(ninp, fchid, kernel_size=args.win_size, stride=args.win_size, padding=0)
-        self.conv2 = nn.Conv1d(fchid, fcout, kernel_size=1, stride=1)
-        self.conv3 = nn.Conv1d(convin, convhidd, kernel_size=75, padding=37)
-        self.conv4 = nn.Conv1d(convhidd, args.n_classes, kernel_size=75, padding=37)
-        self.bn1 = nn.BatchNorm1d(30)
+
+        self.sfc_net = SlidingFullyConnected(args.win_size, ninp=ninp, nhid=fchid, nout=fcout)
+
+        if args.smoother == "1conv":
+            self.smoother = nn.Conv1d(smooth_in, args.n_classes, kernel_size=75, padding=37)
+        elif args.smoother == "2conv":
+            self.smoother = nn.Sequential(
+                nn.Conv1d(smooth_in, smooth_hidd, kernel_size=75, padding=37),
+                nn.ReLU(),
+                nn.Conv1d(smooth_hidd, args.n_classes, kernel_size=75, padding=37),
+            )
+        elif args.smoother == "1TransfEnc":
+            self.smoother = TransformerEncoderConv(fcout, 3, smooth_hidd, args.n_classes, dropout=0.1)
+        else:
+            raise ValueError()
+        # self.last_conv = nn.Conv1d(convhidd, args.n_classes, kernel_size=75, padding=37)
+        # self.bn1 = nn.BatchNorm1d(30)
 
 
     def forward(self, inp):
         out = inp.unsqueeze(1)
 
+        # Pos Embeddings before baseNet
         if self.args.pos_emb == "linpos":
             out = self.pos_emb.apply_embedding(out)
         elif self.args.pos_emb == "trained1":
@@ -74,23 +95,20 @@ class VanillaConvNet(nn.Module):
         elif self.args.pos_emb == "trained3":
             out = self.pos_emb1(out)
 
-        out = self.conv1(out)
-        out = f.relu(self.bn1(out))
-
-        out = h1 = self.conv2(out)
-        out = f.relu(out)
-
+        out = self.sfc_net(out)
 
         if self.args.pos_emb == "trained2":
             out = self.pos_emb(out)
         if self.args.pos_emb == "trained3":
             out = self.pos_emb2(out)
+        if self.args.transf_emb or self.args.pos_emb == "trained1transfemb":
+            # B x C x L --> L x B x C
+            out = out.permute(2, 0, 1)
+            out = self.transf_emb(out)
+            out = out.permute(1, 2, 0)
 
-        # removed the relu from the last layer
-        out = f.relu(self.conv3(out))
-        out = self.conv4(out)
-        #Skip connection
-        # out = out + h1
+        out = self.smoother(out)
+
         out = f.interpolate(out, size=self.args.seq_len)
         out = out.permute(0, 2, 1)
         return out
@@ -120,8 +138,8 @@ class LinearPositionalEmbedding():
 class TrainedPositionalEmbedding(nn.Module):
     def __init__(self, seq_len, operation="concat"):
         super(TrainedPositionalEmbedding, self).__init__()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.emb = nn.Parameter(torch.randn(1, 1, seq_len), requires_grad=True).to(device)
+
+        self.emb = nn.Parameter(torch.randn(1, 1, seq_len), requires_grad=True)
         self.operation = operation
 
     def concatenate_embedding(self, inp):
@@ -142,7 +160,83 @@ class TrainedPositionalEmbedding(nn.Module):
     def forward(self, inp):
         return self.apply_embedding(inp)
 
-# Sliding Fully Connected + Transformer Encoder
-class SFC_TransfEncoder()
 
 
+class SlidingFullyConnected(nn.Module):
+    def __init__(self, win_size, ninp, nhid, nout):
+        super(SlidingFullyConnected, self).__init__()
+        self.conv1 = nn.Conv1d(ninp, nhid, kernel_size=win_size, stride=win_size, padding=0)
+        self.conv2 = nn.Conv1d(nhid, nout, kernel_size=1, stride=1)
+        self.bn = nn.BatchNorm1d(nhid)
+
+    def forward(self, inp):
+        out = self.conv1(inp)
+        out = self.bn(out)
+        out = f.relu(out)
+        out = f.relu(self.conv2(out))
+        return out
+
+
+class TransformerEncoderConv(nn.Module):
+    def __init__(self, ninp, nhead, nhid, nout, dropout):
+        super(TransformerEncoderConv, self).__init__()
+        self.pos_emb = PositionalEncoding(ninp, dropout=dropout)
+
+        self.transf_enc = nn.TransformerEncoderLayer(ninp, nhead, nhid, dropout=dropout)
+        self.out_conv = nn.Conv1d(nhid, nout, kernel_size=1, stride=1)
+
+    def forward(self, inp):
+
+        # B x C x L --> L x B x C
+        out = inp.permute(2, 0, 1)
+
+        out = self.pos_emb(out)
+        out = self.transf_enc(out)
+
+        # L x B x C --> B x C x L
+        out = out.permute(1, 2, 0)
+
+        out = self.out_conv(out)
+        return out
+
+
+class SelfAttentionConv(nn.Module):
+    def __init__(self, ninp, nhead, nhid, nout, dropout):
+        super(SelfAttentionConv, self).__init__()
+        self.pos_emb = PositionalEncoding(ninp, dropout=dropout)
+
+        self.transf_enc = nn.TransformerEncoderLayer(ninp, nhead, nhid,
+                                                     dropout=dropout)
+        self.out_conv = nn.Conv1d(nhid, nout, kernel_size=1, stride=1)
+
+    def forward(self, inp):
+        # B x C x L --> L x B x C
+        out = inp.permute(2, 0, 1)
+
+        out = self.pos_emb(out)
+        out = self.transf_enc(out)
+
+        # L x B x C --> B x C x L
+        out = out.permute(1, 2, 0)
+
+        out = self.out_conv(out)
+        return out
+
+
+class PositionalEncoding(nn.Module):
+
+    def __init__(self, d_model, dropout=0.1, max_len=516800//400):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        x = x + self.pe[:x.size(0), :]
+        return self.dropout(x)

@@ -31,9 +31,7 @@ def train(model, train_loader, valid_loader, args):
         init_epoch, best_val_loss, start_time = progress_saver.get_resume_stats()
 
         init_time = time.time() - start_time
-
         model.load_state_dict(torch.load(args.exp + "/models/last_model.pth"))
-
         optimizer.load_state_dict(
             torch.load(args.exp + "/models/last_optim.pth"))
         for state in optimizer.state.values():
@@ -79,6 +77,7 @@ def train(model, train_loader, valid_loader, args):
             best_val_loss = val_loss
             best_epoch = n
             torch.save(model.state_dict(), args.exp + "/models/best_model.pth")
+
         torch.save(model.state_dict(), args.exp + "/models/last_model.pth")
         torch.save(optimizer.state_dict(), args.exp + "/models/last_optim.pth")
 
@@ -98,7 +97,6 @@ def train(model, train_loader, valid_loader, args):
 
         print("epoch #", n, ":\tVal acc:", val_acc.item(), "\ttime:", time.time()- init_time)
 
-
 def validate(model, val_loader, criterion, args):
 
     with torch.no_grad():
@@ -107,7 +105,6 @@ def validate(model, val_loader, criterion, args):
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        model.to(device)
         model.eval().to(device)
 
         acc = torch.tensor(0).float()
