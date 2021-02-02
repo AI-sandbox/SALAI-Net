@@ -43,10 +43,13 @@ class VanillaConvNet(nn.Module):
             ninp += 1
             self.pos_emb = LinearPositionalEmbedding()
         # Concatenate on the input a trainable vector
-        elif args.pos_emb == "trained1" or args.pos_emb == "trained1transfemb":
+        elif args.pos_emb == "trained1":
             ninp += 1
             self.pos_emb = TrainedPositionalEmbedding(args.seq_len)
-            self.transf_emb = PositionalEncoding(smooth_in, max_len=args.seq_len // args.win_size, dropout=0.1)
+
+        elif args.pos_emb == "trained1dim4":
+            ninp += 4
+            self.pos_emb = TrainedPositionalEmbedding(args.seq_len, dim=4)
 
         # Concatenate a trainable vector after the sliding fully connected
         elif args.pos_emb == "trained2":
@@ -58,12 +61,11 @@ class VanillaConvNet(nn.Module):
             ninp += 1
             self.pos_emb2 = TrainedPositionalEmbedding(args.seq_len // args.win_size)
             smooth_in += 1
+        else:
+            raise ValueError()
 
         if self.args.transf_emb == True:
             self.transf_emb = PositionalEncoding(smooth_in, max_len=args.seq_len // args.win_size, dropout=0.1)
-
-        else:
-            raise ValueError()
 
 
         self.sfc_net = SlidingFullyConnected(args.win_size, ninp=ninp, nhid=fchid, nout=fcout)
@@ -90,10 +92,8 @@ class VanillaConvNet(nn.Module):
         # Pos Embeddings before baseNet
         if self.args.pos_emb == "linpos":
             out = self.pos_emb.apply_embedding(out)
-        elif self.args.pos_emb == "trained1":
+        elif self.args.pos_emb in ["trained1", "trained1dim4", "trained3"]:
             out = self.pos_emb(out)
-        elif self.args.pos_emb == "trained3":
-            out = self.pos_emb1(out)
 
         out = self.sfc_net(out)
 
@@ -101,7 +101,7 @@ class VanillaConvNet(nn.Module):
             out = self.pos_emb(out)
         if self.args.pos_emb == "trained3":
             out = self.pos_emb2(out)
-        if self.args.transf_emb or self.args.pos_emb == "trained1transfemb":
+        if self.args.transf_emb:
             # B x C x L --> L x B x C
             out = out.permute(2, 0, 1)
             out = self.transf_emb(out)
@@ -136,15 +136,19 @@ class LinearPositionalEmbedding():
 
 
 class TrainedPositionalEmbedding(nn.Module):
-    def __init__(self, seq_len, operation="concat"):
+    def __init__(self, seq_len, operation="concat", dim=1):
         super(TrainedPositionalEmbedding, self).__init__()
 
-        self.emb = nn.Parameter(torch.randn(1, 1, seq_len), requires_grad=True)
+        self.emb = nn.Parameter(torch.randn(1, dim, seq_len), requires_grad=True)
         self.operation = operation
 
     def concatenate_embedding(self, inp):
 
         bs, n_channels, seq_len = inp.shape
+
+        # print(inp.shape)
+        # print(self.emb.shape)
+        # print(self.emb.repeat(bs, 1, 1).shape)
         inp = torch.cat((inp, self.emb.repeat(bs, 1, 1)), dim=1)
         return inp
 

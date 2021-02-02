@@ -37,7 +37,6 @@ parser.add_argument("--pos-emb", type=str, choices=["linpos",
                                                     "trained1",
                                                     "trained2",
                                                     "trained3",
-                                                    "trained1transfemb",
                                                     "trained1dim4"],
                     default=None)
 parser.add_argument("--transf-emb", dest="transf_emb", action='store_true')
