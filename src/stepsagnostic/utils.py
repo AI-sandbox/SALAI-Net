@@ -72,9 +72,11 @@ class ReshapedCrossEntropyLoss(nn.Module):
 
         bs, seq_len, n_classes = prediction.shape
 
+        # print(prediction.shape)
+        # print(target.shape)
+        # quit()
         prediction = prediction.reshape(bs * seq_len, n_classes)
         target = target.reshape(bs * seq_len)
-
         loss = self.CELoss(prediction, target)
 
         return loss
@@ -94,11 +96,11 @@ class EncodeBinary:
 
         # 0 -> -1
         # 1 -> 1
-        inp["vcf"] = inp["vcf"] * 2 - 1
+        inp["mixed_vcf"] = inp["mixed_vcf"] * 2 - 1
+        for anc in inp["ref_panel"]:
+            inp["ref_panel"][anc] = inp["ref_panel"][anc] * 2 - 1
 
         return inp
-
-
 
 
 def build_transforms(args):
@@ -110,3 +112,17 @@ def build_transforms(args):
     transforms_list = transforms.Compose(transforms_list)
 
     return transforms_list
+
+
+def to_device(item, device):
+
+    item["mixed_vcf"] = item["mixed_vcf"].to(device)
+    item["mixed_labels"] = item["mixed_labels"].to(device)
+
+
+
+    for i, panel in enumerate(item["ref_panel"]):
+        for anc in panel.keys():
+            item["ref_panel"][i][anc] = item["ref_panel"][i][anc].to(device)
+
+    return item

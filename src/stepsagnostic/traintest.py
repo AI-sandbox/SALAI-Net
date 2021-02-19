@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from .utils import ancestry_accuracy, ProgressSaver, AverageMeter, ReshapedCrossEntropyLoss,\
-    adjust_learning_rate
+    adjust_learning_rate, to_device
 
 import time
 
@@ -54,15 +54,15 @@ def train(model, train_loader, valid_loader, args):
         for i, batch in enumerate(train_loader):
             # break
 
-            if args.model == "VanillaConvNet":
-                out_base, out = model(batch["vcf"].to(device))
-            elif args.model == "LAINet":
-                out_base, out = model(batch["vcf"].to(device))
+            # if args.model == "VanillaConvNet":
+            #     out = model(batch["vcf"].to(device))
+            # elif args.model == "LAINet":
+            #     out_base, out = model(batch["vcf"].to(device))
+            batch = to_device(batch, device)
+            out = model(batch["mixed_vcf"], batch["ref_panel"])
 
-            loss = criterion(out, batch["labels"].to(device))
-            loss_base = criterion(out_base,  batch["labels"].to(device))
+            loss = criterion(out, batch["mixed_labels"].to(device))
 
-            loss_base.backward()
             loss.backward()
 
             if(i % 8) == 0:
@@ -114,16 +114,16 @@ def validate(model, val_loader, criterion, args):
         acc = torch.tensor(0).float()
 
         for i, batch in enumerate(val_loader):
+            batch = to_device(batch, device)
+            # if args.model == "VanillaConvNet":
+            #     out = model(batch["vcf"].to(device))
+            # elif args.model == "LAINet":
+            #     out_base, out = model(batch["vcf"].to(device))
 
-            if args.model == "VanillaConvNet":
-                out = model(batch["vcf"].to(device))
-            elif args.model == "LAINet":
-                out_base, out = model(batch["vcf"].to(device))
+            out = model(batch["mixed_vcf"], batch["ref_panel"])
 
-            batch["labels"] = batch["labels"].to(device)
-
-            acc = acc + ancestry_accuracy(out, batch["labels"])
-            loss = criterion(out, batch["labels"])
+            acc = acc + ancestry_accuracy(out, batch["mixed_labels"])
+            loss = criterion(out, batch["mixed_labels"])
             val_loss.update(loss.item())
 
         acc = acc / len(val_loader.dataset)

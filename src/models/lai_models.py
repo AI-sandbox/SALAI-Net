@@ -1,5 +1,4 @@
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
@@ -23,6 +22,7 @@ class DevModel(nn.Module):
         out = out.permute(0, 2, 1)
 
         return out
+
 
 class VanillaConvNet(nn.Module):
     def __init__(self, args):
@@ -69,6 +69,7 @@ class VanillaConvNet(nn.Module):
 
 
         self.sfc_net = SlidingFullyConnected(args.win_size, ninp=ninp, nhid=fchid, nout=fcout)
+        self.hid2classes = nn.Conv1d(fcout, args.n_classes, kernel_size=1)
 
         if args.smoother == "1conv":
             self.smoother = nn.Conv1d(smooth_in, args.n_classes, kernel_size=75, padding=37)
@@ -95,7 +96,7 @@ class VanillaConvNet(nn.Module):
         elif self.args.pos_emb in ["trained1", "trained1dim4", "trained3"]:
             out = self.pos_emb(out)
 
-        out = self.sfc_net(out)
+        out = h1 = self.sfc_net(out)
 
         if self.args.pos_emb == "trained2":
             out = self.pos_emb(out)
@@ -109,61 +110,21 @@ class VanillaConvNet(nn.Module):
 
         out = self.smoother(out)
 
-        out = f.interpolate(out, size=self.args.seq_len)
+        non_padded_length = self.args.seq_len // self.args.win_size * self.args.win_size
+
+
+        h1 = self.hid2classes(h1)
+        h1 = f.interpolate(h1, size=non_padded_length)
+        h1 = f.pad(h1, (0, self.args.seq_len - non_padded_length),
+                    mode="replicate")
+        h1 = h1.permute(0, 2, 1)
+
+        out = f.interpolate(out, size=non_padded_length)
+        out = f.pad(out, (0, self.args.seq_len - non_padded_length),
+                    mode="replicate")
+
         out = out.permute(0, 2, 1)
-        return out
-
-class LinearPositionalEmbedding():
-    def __init__(self, operation="concat"):
-        self.emb = None
-        self.operation = operation
-
-    def concatenate_embedding(self, inp):
-
-        bs, n_channels, seq_len = inp.shape
-        if self.emb is None:
-            self.emb = torch.range(0, seq_len-1) / seq_len
-            self.emb = self.emb.repeat(bs, 1)
-            self.emb = self.emb.unsqueeze(1)
-            self.emb = self.emb.to(inp.device)
-
-        inp = torch.cat((inp, self.emb[:bs]), dim=1)
-        return inp
-
-    def apply_embedding(self, inp):
-        if self.operation =="concat":
-            return self.concatenate_embedding(inp)
-
-
-class TrainedPositionalEmbedding(nn.Module):
-    def __init__(self, seq_len, operation="concat", dim=1):
-        super(TrainedPositionalEmbedding, self).__init__()
-
-        self.emb = nn.Parameter(torch.randn(1, dim, seq_len), requires_grad=True)
-        self.operation = operation
-
-    def concatenate_embedding(self, inp):
-
-        bs, n_channels, seq_len = inp.shape
-
-        # print(inp.shape)
-        # print(self.emb.shape)
-        # print(self.emb.repeat(bs, 1, 1).shape)
-        inp = torch.cat((inp, self.emb.repeat(bs, 1, 1)), dim=1)
-        return inp
-
-    def add_embedding(self, inp):
-        return inp + self.emb
-
-    def apply_embedding(self, inp):
-        if self.operation == "concat":
-            return self.concatenate_embedding(inp)
-        if self.operation == "add":
-            return self.add_embedding(inp)
-
-    def forward(self, inp):
-        return self.apply_embedding(inp)
-
+        return h1, out
 
 
 class SlidingFullyConnected(nn.Module):
@@ -204,26 +165,46 @@ class TransformerEncoderConv(nn.Module):
         return out
 
 
-class SelfAttentionConv(nn.Module):
-    def __init__(self, ninp, nhead, nhid, nout, dropout):
-        super(SelfAttentionConv, self).__init__()
-        self.pos_emb = PositionalEncoding(ninp, dropout=dropout)
+class AgnosticConvModel(nn.Module):
 
-        self.transf_enc = nn.TransformerEncoderLayer(ninp, nhead, nhid,
-                                                     dropout=dropout)
-        self.out_conv = nn.Conv1d(nhid, nout, kernel_size=1, stride=1)
+    def __init__(self, args):
+        super(AgnosticConvModel, self).__init__()
+        self.args = args
 
-    def forward(self, inp):
-        # B x C x L --> L x B x C
-        out = inp.permute(2, 0, 1)
+        ninp = 28
+        fchid = 30
+        fcout = smooth_in = 30
 
-        out = self.pos_emb(out)
-        out = self.transf_enc(out)
+        self.sfc_net = SlidingFullyConnected(args.win_size, ninp=ninp,
+                                             nhid=fchid, nout=fcout)
 
-        # L x B x C --> B x C x L
-        out = out.permute(1, 2, 0)
+        self.smoother = nn.Conv1d(smooth_in, args.n_classes, kernel_size=75,
+                                  padding=37)
 
-        out = self.out_conv(out)
+
+    def multiply_ref_panel(self, mixed, ref_panel):
+        all_refs = [ref_panel[ancestry] for ancestry in ref_panel.keys()]
+        all_refs = torch.cat(all_refs, dim=0)
+
+        return all_refs * mixed.unsqueeze(0)
+
+    def forward(self, input_mixed, ref_panel):
+        out = []
+        for inp, ref in zip(input_mixed, ref_panel):
+            out.append(self.multiply_ref_panel(inp, ref))
+        out = torch.stack(out)
+
+        out = self.sfc_net(out)
+
+        out = self.smoother(out)
+
+        non_padded_length = self.args.seq_len // self.args.win_size * self.args.win_size
+        out = f.interpolate(out, size=non_padded_length)
+        out = f.pad(out, (0, self.args.seq_len - non_padded_length),
+                    mode="replicate")
+
+        out = out.permute(0, 2, 1)
+
         return out
 
 
@@ -244,3 +225,56 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
+
+
+class LinearPositionalEmbedding():
+    def __init__(self, operation="concat"):
+        self.emb = None
+        self.operation = operation
+
+    def concatenate_embedding(self, inp):
+
+        bs, n_channels, seq_len = inp.shape
+        if self.emb is None:
+            self.emb = torch.range(0, seq_len - 1) / seq_len
+            self.emb = self.emb.repeat(bs, 1)
+            self.emb = self.emb.unsqueeze(1)
+            self.emb = self.emb.to(inp.device)
+
+        inp = torch.cat((inp, self.emb[:bs]), dim=1)
+        return inp
+
+    def apply_embedding(self, inp):
+        if self.operation == "concat":
+            return self.concatenate_embedding(inp)
+
+
+class TrainedPositionalEmbedding(nn.Module):
+    def __init__(self, seq_len, operation="concat", dim=1):
+        super(TrainedPositionalEmbedding, self).__init__()
+
+        self.emb = nn.Parameter(torch.randn(1, dim, seq_len), requires_grad=True)
+        self.operation = operation
+
+    def concatenate_embedding(self, inp):
+
+        bs, n_channels, seq_len = inp.shape
+
+        # print(inp.shape)
+        # print(self.emb.shape)
+        # print(self.emb.repeat(bs, 1, 1).shape)
+        inp = torch.cat((inp, self.emb.repeat(bs, 1, 1)), dim=1)
+        return inp
+
+    def add_embedding(self, inp):
+        return inp + self.emb
+
+    def apply_embedding(self, inp):
+        if self.operation == "concat":
+            return self.concatenate_embedding(inp)
+        if self.operation == "add":
+            return self.add_embedding(inp)
+
+    def forward(self, inp):
+        return self.apply_embedding(inp)
+
