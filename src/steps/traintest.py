@@ -61,9 +61,11 @@ def train(model, train_loader, valid_loader, args):
 
             loss = criterion(out, batch["labels"].to(device))
 
-            optimizer.zero_grad()
             loss.backward()
-            optimizer.step()
+
+            if(i % 8) == 0:
+                optimizer.step()
+                optimizer.zero_grad()
 
             train_loss_meter.update(loss.item())
 

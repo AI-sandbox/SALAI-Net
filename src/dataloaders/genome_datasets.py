@@ -33,5 +33,3 @@ class GenomeDataset(Dataset):
         item = self.transforms(item)
         return item
 
-
-
