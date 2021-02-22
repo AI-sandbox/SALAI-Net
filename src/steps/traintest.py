@@ -62,7 +62,7 @@ def train(model, train_loader, valid_loader, args):
             loss = criterion(out, batch["labels"].to(device))
             loss_base = criterion(out_base,  batch["labels"].to(device))
 
-            loss_base.backward()
+            loss_base.backward(retain_graph=True)
             loss.backward()
 
             if(i % 8) == 0:
@@ -116,7 +116,7 @@ def validate(model, val_loader, criterion, args):
         for i, batch in enumerate(val_loader):
 
             if args.model == "VanillaConvNet":
-                out = model(batch["vcf"].to(device))
+                out_base, out = model(batch["vcf"].to(device))
             elif args.model == "LAINet":
                 out_base, out = model(batch["vcf"].to(device))
 

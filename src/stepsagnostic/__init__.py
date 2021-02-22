@@ -1,2 +1,2 @@
-from .traintest import train
-from .utils import build_transforms
+from .traintest import train, validate
+from .utils import build_transforms, ReshapedCrossEntropyLoss

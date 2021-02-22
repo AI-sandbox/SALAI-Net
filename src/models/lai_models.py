@@ -186,6 +186,11 @@ class AgnosticConvModel(nn.Module):
         all_refs = [ref_panel[ancestry] for ancestry in ref_panel.keys()]
         all_refs = torch.cat(all_refs, dim=0)
 
+
+        print(all_refs[:, :5])
+        print(mixed.unsqueeze(0)[:, :5])
+        print((all_refs * mixed.unsqueeze(0))[:, :5])
+        quit()
         return all_refs * mixed.unsqueeze(0)
 
     def forward(self, input_mixed, ref_panel):
@@ -193,6 +198,8 @@ class AgnosticConvModel(nn.Module):
         for inp, ref in zip(input_mixed, ref_panel):
             out.append(self.multiply_ref_panel(inp, ref))
         out = torch.stack(out)
+        print(out[0, :, :5])
+        quit()
 
         out = self.sfc_net(out)
 
