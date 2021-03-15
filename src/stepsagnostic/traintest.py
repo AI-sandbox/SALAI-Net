@@ -1,5 +1,5 @@
 import torch
-import torch.nn as nn
+
 from .utils import ancestry_accuracy, ProgressSaver, AverageMeter, ReshapedCrossEntropyLoss,\
     adjust_learning_rate, to_device
 
@@ -112,7 +112,6 @@ def validate(model, val_loader, criterion, args):
         model.eval().to(device)
 
         acc = torch.tensor(0).float()
-
         for i, batch in enumerate(val_loader):
             batch = to_device(batch, device)
             # if args.model == "VanillaConvNet":

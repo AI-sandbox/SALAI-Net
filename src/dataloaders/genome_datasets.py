@@ -39,7 +39,7 @@ class GenomeDataset(Dataset):
 
 class ReferencePanel:
 
-    def __init__(self, reference_panel_h5):
+    def __init__(self, reference_panel_h5, n_refs, n_classes):
 
         self.reference_vcf = reference_panel_h5["vcf"]
         reference_labels = reference_panel_h5["labels"]
@@ -63,6 +63,9 @@ class ReferencePanel:
 
         self.reference_panel_index_dict = reference_panel
 
+        self.n_classes = n_classes
+        self.n_refs = n_refs
+
     def sample_uniform_all_classes(self, n_sample_per_class):
 
         reference_samples = {}
@@ -80,7 +83,7 @@ class ReferencePanel:
         return (reference_samples)
 
     def sample_reference_panel(self):
-        return self.sample_uniform_all_classes(n_sample_per_class=4)
+        return self.sample_uniform_all_classes(n_sample_per_class=self.n_refs // self.n_classes)
 
 
 def ref_pan_to_tensor(item):
@@ -95,14 +98,17 @@ def ref_pan_to_tensor(item):
 
 class ReferencePanelDataset(Dataset):
 
-    def __init__(self, mixed_h5, reference_panel_h5, transforms):
+    def __init__(self, mixed_h5, reference_panel_h5, n_refs, n_classes, transforms):
         reference_panel_file = h5py.File(reference_panel_h5, "r")
-        self.reference_panel = ReferencePanel(reference_panel_file)
+        self.reference_panel = ReferencePanel(reference_panel_file, n_refs, n_classes)
 
         mixed_file = h5py.File(mixed_h5)
         self.mixed_vcf = mixed_file["vcf"]
         self.mixed_labels = mixed_file["labels"]
         self.transforms = transforms
+
+        self.n_refs = n_refs
+        self.n_classes = n_classes
 
     def __len__(self):
         return self.mixed_vcf.shape[0]
@@ -111,7 +117,7 @@ class ReferencePanelDataset(Dataset):
 
         item = {
             "mixed_vcf": self.mixed_vcf[item].astype(float),
-            "mixed_labels": self.mixed_labels[item],
+            "mixed_labels": self.mixed_labels[item]
         }
 
         item["ref_panel"] = self.reference_panel.sample_reference_panel()

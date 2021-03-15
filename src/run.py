@@ -28,24 +28,34 @@ parser.add_argument("--num-epochs", type=int, default=99999999)
 parser.add_argument("-b", "--batch-size", type=int, default=32)
 parser.add_argument("--lr", type=float, default=0.01)
 parser.add_argument("--lr-decay", type=int, default=-1)
+parser.add_argument("--update-every", type=int, default=1)
 
 parser.add_argument("--smoother", type=str, choices=["1conv",
                                                      "2conv",
+                                                     "2convDil",
                                                      "1TransfEnc"],
                     default="1conv")
+
+parser.add_argument("--base-model", type=str, choices=["SFC"],
+                    default="SFC")
+
 parser.add_argument("--pos-emb", type=str, choices=["linpos",
                                                     "trained1",
                                                     "trained2",
                                                     "trained3",
                                                     "trained1dim4"],
-                    default=None)
+                    default="trained1")
 parser.add_argument("--transf-emb", dest="transf_emb", action='store_true')
 
 parser.add_argument("--win-size", type=int, default=400)
+parser.add_argument("--win-stride", type=int, default=400)
+
+parser.add_argument("--conv1-dilation", type=int, default=1)
 
 parser.add_argument("--loss", type=str, default="BCE", choices=["BCE"])
 
 parser.add_argument("--resume", dest="resume", action='store_true')
+parser.add_argument("--base-loss", dest="base_loss", action='store_true')
 
 
 parser.add_argument("--seq-len", type=int, default=516800)

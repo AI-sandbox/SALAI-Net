@@ -30,6 +30,8 @@ class AverageMeter():
         self.count += 1
 
     def get_average(self):
+        if self.count == 0:
+            return None
         return self.total / self.count
 
 class ProgressSaver():
@@ -40,8 +42,10 @@ class ProgressSaver():
             "epoch":[],
             "train_loss":[],
             "val_loss":[],
+            "base_val_loss": [],
             "val_acc": [],
-            "time":[],
+            "base_val_acc": [],
+            "time": [],
             "best_epoch":[],
             "best_val_loss":[],
             "lr": []

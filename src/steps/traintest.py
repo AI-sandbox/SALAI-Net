@@ -60,18 +60,19 @@ def train(model, train_loader, valid_loader, args):
                 out_base, out = model(batch["vcf"].to(device))
 
             loss = criterion(out, batch["labels"].to(device))
-            loss_base = criterion(out_base,  batch["labels"].to(device))
 
-            loss_base.backward(retain_graph=True)
+            if args.base_loss:
+                loss_base = criterion(out_base,  batch["labels"].to(device))
+                loss = loss + loss_base
             loss.backward()
 
-            if(i % 8) == 0:
+            if((i+1) % args.update_every) == 0:
                 optimizer.step()
                 optimizer.zero_grad()
 
             train_loss_meter.update(loss.item())
 
-        val_acc, val_loss = validate(model, valid_loader, criterion, args)
+        val_acc, base_val_acc, val_loss, base_val_loss = validate(model, valid_loader, criterion, args)
         train_loss = train_loss_meter.get_average()
 
         total_time = time.time() - init_time
@@ -89,7 +90,9 @@ def train(model, train_loader, valid_loader, args):
             "epoch": n,
             "train_loss": train_loss,
             "val_loss": val_loss,
+            "base_val_loss": base_val_loss,
             "val_acc": val_acc.cpu(),
+            "base_val_acc": base_val_acc.cpu(),
             "best_epoch": best_epoch,
             "best_val_loss": best_val_loss,
             "time": total_time,
@@ -106,12 +109,14 @@ def validate(model, val_loader, criterion, args):
     with torch.no_grad():
 
         val_loss = AverageMeter()
+        base_val_loss = AverageMeter()
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         model.eval().to(device)
 
         acc = torch.tensor(0).float()
+        base_acc = torch.tensor(0).float()
 
         for i, batch in enumerate(val_loader):
 
@@ -126,7 +131,16 @@ def validate(model, val_loader, criterion, args):
             loss = criterion(out, batch["labels"])
             val_loss.update(loss.item())
 
+            if args.base_loss:
+                base_acc = base_acc + ancestry_accuracy(out_base,batch["labels"])
+                base_loss = criterion(out_base, batch["labels"])
+                base_val_loss.update(base_loss.item())
+
+
         acc = acc / len(val_loader.dataset)
 
-        return acc, val_loss.get_average()
+        if args.base_loss:
+            base_acc = base_acc / len(val_loader.dataset)
+
+        return acc, base_acc, val_loss.get_average(), base_val_loss.get_average()
 

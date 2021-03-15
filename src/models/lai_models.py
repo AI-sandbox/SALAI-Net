@@ -67,18 +67,25 @@ class VanillaConvNet(nn.Module):
         if self.args.transf_emb == True:
             self.transf_emb = PositionalEncoding(smooth_in, max_len=args.seq_len // args.win_size, dropout=0.1)
 
+        if args.win_stride == -1:
+            self.win_stride = args.win_size
+        else:
+            self.win_stride = args.win_stride
 
-        self.sfc_net = SlidingFullyConnected(args.win_size, ninp=ninp, nhid=fchid, nout=fcout)
+        self.base_model = SlidingFullyConnected(args.win_size, self.win_stride, ninp=ninp, nhid=fchid, nout=fcout)
+
         self.hid2classes = nn.Conv1d(fcout, args.n_classes, kernel_size=1)
 
         if args.smoother == "1conv":
-            self.smoother = nn.Conv1d(smooth_in, args.n_classes, kernel_size=75, padding=37)
+            kernel_size = 75
+            dilation = args.conv1_dilation
+            dilated_kernelsize = kernel_size + (kernel_size-1) * (dilation-1)
+            padding = dilated_kernelsize // 2
+            self.smoother = nn.Conv1d(smooth_in, args.n_classes, kernel_size=kernel_size, padding=padding, dilation=dilation)
         elif args.smoother == "2conv":
-            self.smoother = nn.Sequential(
-                nn.Conv1d(smooth_in, smooth_hidd, kernel_size=75, padding=37),
-                nn.ReLU(),
-                nn.Conv1d(smooth_hidd, args.n_classes, kernel_size=75, padding=37),
-            )
+            self.smoother = TwoConvSmoother(ninp=smooth_in, nhid=smooth_hidd, nout=args.n_classes)
+        elif args.smoother == "2convDil":
+            self.smoother = TwoConvDilSmoother(ninp=smooth_in, nhid=smooth_hidd, nout=args.n_classes)
         elif args.smoother == "1TransfEnc":
             self.smoother = TransformerEncoderConv(fcout, 3, smooth_hidd, args.n_classes, dropout=0.1)
         else:
@@ -87,7 +94,9 @@ class VanillaConvNet(nn.Module):
         # self.bn1 = nn.BatchNorm1d(30)
 
 
-    def forward(self, inp):
+    def forward(self, inp, need_weights=False):
+
+        h1 = None
         out = inp.unsqueeze(1)
 
         # Pos Embeddings before baseNet
@@ -95,8 +104,9 @@ class VanillaConvNet(nn.Module):
             out = self.pos_emb.apply_embedding(out)
         elif self.args.pos_emb in ["trained1", "trained1dim4", "trained3"]:
             out = self.pos_emb(out)
-
-        out = h1 = self.sfc_net(out)
+        # print(out.shape)
+        out = self.base_model(out)
+        # print(out.shape)
 
         if self.args.pos_emb == "trained2":
             out = self.pos_emb(out)
@@ -108,38 +118,107 @@ class VanillaConvNet(nn.Module):
             out = self.transf_emb(out)
             out = out.permute(1, 2, 0)
 
-        out = self.smoother(out)
+        attention = None
+        if self.args.smoother == "1TransfEnc":
+            hid, out, attention = self.smoother(out, need_weights=need_weights)
+        else:
+            hid, out = self.smoother(out)
 
-        non_padded_length = self.args.seq_len // self.args.win_size * self.args.win_size
+        # print(out.shape)
+        # h1 = self.hid2classes(h1)
+
+        # h1 = interpolate_and_pad(h1, self.win_stride, self.args.seq_len)
+        out = interpolate_and_pad(out, self.win_stride, self.args.seq_len)
+        # print(out.shape)
 
 
-        h1 = self.hid2classes(h1)
-        h1 = f.interpolate(h1, size=non_padded_length)
-        h1 = f.pad(h1, (0, self.args.seq_len - non_padded_length),
-                    mode="replicate")
-        h1 = h1.permute(0, 2, 1)
-
-        out = f.interpolate(out, size=non_padded_length)
-        out = f.pad(out, (0, self.args.seq_len - non_padded_length),
-                    mode="replicate")
-
+        # h1 = h1.permute(0, 2, 1)
         out = out.permute(0, 2, 1)
-        return h1, out
+
+        return h1, out, attention
 
 
 class SlidingFullyConnected(nn.Module):
-    def __init__(self, win_size, ninp, nhid, nout):
+    def __init__(self, win_size, stride, ninp, nhid, nout):
         super(SlidingFullyConnected, self).__init__()
-        self.conv1 = nn.Conv1d(ninp, nhid, kernel_size=win_size, stride=win_size, padding=0)
+        self.conv1 = nn.Conv1d(ninp, nhid, kernel_size=win_size, stride=stride, padding=0)
+
         self.conv2 = nn.Conv1d(nhid, nout, kernel_size=1, stride=1)
         self.bn = nn.BatchNorm1d(nhid)
 
     def forward(self, inp):
+        # print("1", inp.shape)
         out = self.conv1(inp)
+        # print("2", out.shape)
+
         out = self.bn(out)
         out = f.relu(out)
         out = f.relu(self.conv2(out))
+        # print("3", out.shape)
+
         return out
+
+    class SlidingFullyConnected(nn.Module):
+        def __init__(self, win_size, stride, ninp, nhid, nout):
+            super(SlidingFullyConnected, self).__init__()
+            self.conv1 = nn.Conv1d(ninp, nhid, kernel_size=win_size,
+                                   stride=stride, padding=0)
+
+            self.conv2 = nn.Conv1d(nhid, nout, kernel_size=1, stride=1)
+            self.bn = nn.BatchNorm1d(nhid)
+
+        def forward(self, inp):
+            # print("1", inp.shape)
+            out = self.conv1(inp)
+            # print("2", out.shape)
+
+            out = self.bn(out)
+            out = f.relu(out)
+            out = f.relu(self.conv2(out))
+            # print("3", out.shape)
+
+            return out
+
+
+class SlidingChannelConnected(nn.Module):
+    def __init__(self, win_size, stride):
+        super(SlidingChannelConnected, self).__init__()
+
+        self.kernel = torch.randn((1, 1, 1, win_size))
+        # We pass is as parameter but freeze it
+        self.kernel = nn.Parameter(self.kernel)
+        self.stride = stride
+
+        # self.batchnorm = nn.BatchNorm1d(num_features=32)
+
+
+    def forward(self, inp):
+
+        inp = inp.unsqueeze(1)
+        inp = f.conv2d(inp, self.kernel, stride=(1, self.stride))
+        inp = inp.squeeze(1)
+        # inp = self.batchnorm(inp)
+
+        return inp
+
+
+class SlidingChannelSum(nn.Module):
+    def __init__(self, win_size, stride):
+        super(SlidingChannelSum, self).__init__()
+
+        self.kernel = torch.ones(1, 1, 1, win_size).float() / win_size
+        # We pass is as parameter but freeze it
+        self.kernel = nn.Parameter(self.kernel, requires_grad=False)
+        self.stride = stride
+
+
+    def forward(self, inp):
+
+        inp = inp.unsqueeze(1)
+        inp = f.conv2d(inp, self.kernel, stride=(1, self.stride))
+        inp = inp.squeeze(1)
+
+        return inp
 
 
 class TransformerEncoderConv(nn.Module):
@@ -147,22 +226,84 @@ class TransformerEncoderConv(nn.Module):
         super(TransformerEncoderConv, self).__init__()
         self.pos_emb = PositionalEncoding(ninp, dropout=dropout)
 
-        self.transf_enc = nn.TransformerEncoderLayer(ninp, nhead, nhid, dropout=dropout)
+        # Started using
+        self.transf_enc = TransformerEncoderLayer(ninp, nhead, nhid, dropout=dropout)
+        # self.transf_enc = nn.TransformerEncoderLayer(ninp, nhead, nhid, dropout=dropout)
+
         self.out_conv = nn.Conv1d(nhid, nout, kernel_size=1, stride=1)
 
-    def forward(self, inp):
+    def forward(self, inp, need_weights=False):
 
         # B x C x L --> L x B x C
         out = inp.permute(2, 0, 1)
 
         out = self.pos_emb(out)
-        out = self.transf_enc(out)
+        out, attention_mat = self.transf_enc(out, need_weights=need_weights)
 
         # L x B x C --> B x C x L
         out = out.permute(1, 2, 0)
 
         out = self.out_conv(out)
-        return out
+        return (None, out, attention_mat)
+
+
+class TwoConvSmoother(nn.Module):
+    def __init__(self, ninp, nhid, nout):
+        super(TwoConvSmoother, self).__init__()
+
+        self.conv1 = nn.Conv1d(ninp, nhid, kernel_size=75, padding=37)
+        self.conv2 = nn.Conv1d(nhid, nout, kernel_size=75, padding=37)
+
+    def forward(self, inp):
+        out = hidd = self.conv1(inp)
+
+        # out = f.relu(out)
+        out = self.conv2(out)
+
+        return hidd, out
+
+
+class TwoConvDilSmoother(nn.Module):
+    def __init__(self, ninp, nhid, nout):
+        super(TwoConvDilSmoother, self).__init__()
+
+        self.conv1 = nn.Conv1d(ninp, nhid, kernel_size=75, padding=37)
+        self.conv2 = nn.Conv1d(nhid, nout, kernel_size=75, padding=74, dilation=2)
+
+    def forward(self, inp):
+        hidd = self.conv1(inp)
+        out = hidd
+        # out = f.relu(out)
+        out = self.conv2(out)
+
+        return hidd, out
+
+
+class ConvMaxPoolSmoother(nn.Module):
+    def __init__(self, ninp, nout):
+        super(ConvMaxPoolSmoother, self).__init__()
+        self.maxpool = nn.MaxPool2d((1, 75), padding=(0, 37))
+        self.conv1 = nn.Conv1d(ninp, nout, kernel_size=75, padding=37)
+
+    def forward(self, inp):
+        print(inp.shape)
+        out = inp.unsqueeze(1)
+        print(out.shape)
+        out = self.maxpool(out)
+        print(out.shape)
+        out = out.squeeze(1)
+        print(out.shape)
+        out = self.conv2(f.relu(out))
+        print(out.shape)
+        quit()
+
+        return None, out
+
+
+
+
+
+
 
 
 class AgnosticConvModel(nn.Module):
@@ -175,22 +316,64 @@ class AgnosticConvModel(nn.Module):
         fchid = 30
         fcout = smooth_in = 30
 
-        self.sfc_net = SlidingFullyConnected(args.win_size, ninp=ninp,
+        if args.win_stride == -1:
+            self.win_stride = args.win_size
+        else:
+            self.win_stride = args.win_stride
+
+        if args.base_model == "SFC":
+            self.base_model = SlidingFullyConnected(win_size=args.win_size, stride=self.win_stride, ninp=ninp,
                                              nhid=fchid, nout=fcout)
+        elif args.base_model == "SCS":
+            self.base_model = SlidingChannelSum(win_size=args.win_size, stride=self.win_stride)
+            smooth_in = args.n_refs
 
-        self.smoother = nn.Conv1d(smooth_in, args.n_classes, kernel_size=75,
-                                  padding=37)
+        elif args.base_model == "SCC":
+            self.base_model = nn.Sequential(
+                SlidingChannelConnected(win_size=args.win_size, stride=self.win_stride),
+                nn.BatchNorm1d(args.n_refs))
+            smooth_in = args.n_refs
 
+        # dilation = int(400 * 400 / args.win_size // self.win_stride)
+        dilation = 1
+        dilated_kernel_size = 75 + 74 * (dilation - 1)
+        #
+        padding = dilated_kernel_size // 2
+        padding = 37
+
+        if args.smoother == "1conv":
+            # kernel_size = 150
+            kernel_size = 75
+            self.smoother = nn.Conv1d(smooth_in, args.n_classes, kernel_size=kernel_size,
+                                  padding=padding, dilation=dilation)
+
+        elif args.smoother == "2conv":
+            self.smoother = nn.Sequential(
+                nn.Conv1d(smooth_in, 30, kernel_size=75, padding=padding, dilation=dilation),
+                # nn.ReLU(),
+                nn.BatchNorm1d(30),
+                nn.Conv1d(30, args.n_classes, kernel_size=75, padding=padding,dilation=dilation),
+            )
+        elif args.smoother == "3convdil":
+            self.smoother = nn.Sequential(
+                nn.Conv1d(smooth_in, 30, kernel_size=75, padding=padding,dilation=dilation),
+                # nn.ReLU(),
+                nn.BatchNorm1d(30),
+                nn.Conv1d(30, 30, kernel_size=75, padding=padding,dilation=dilation),
+                nn.BatchNorm1d(30),
+                nn.Conv1d(30, args.n_classes, kernel_size=75, padding=74,dilation=2),
+            )
+        else:
+            raise ValueError()
+
+        if args.dropout > 0:
+            self.dropout = nn.Dropout(p=args.dropout)
+        else:
+            self.dropout = nn.Sequential()
 
     def multiply_ref_panel(self, mixed, ref_panel):
         all_refs = [ref_panel[ancestry] for ancestry in ref_panel.keys()]
         all_refs = torch.cat(all_refs, dim=0)
-
-
-        print(all_refs[:, :5])
-        print(mixed.unsqueeze(0)[:, :5])
-        print((all_refs * mixed.unsqueeze(0))[:, :5])
-        quit()
         return all_refs * mixed.unsqueeze(0)
 
     def forward(self, input_mixed, ref_panel):
@@ -198,19 +381,39 @@ class AgnosticConvModel(nn.Module):
         for inp, ref in zip(input_mixed, ref_panel):
             out.append(self.multiply_ref_panel(inp, ref))
         out = torch.stack(out)
-        print(out[0, :, :5])
-        quit()
 
-        out = self.sfc_net(out)
+        out = self.base_model(out)
+
+        out = self.dropout(out)
 
         out = self.smoother(out)
 
-        non_padded_length = self.args.seq_len // self.args.win_size * self.args.win_size
-        out = f.interpolate(out, size=non_padded_length)
-        out = f.pad(out, (0, self.args.seq_len - non_padded_length),
-                    mode="replicate")
+
+        # print("6", out.shape)
+
+
+        # non_padded_length = self.args.seq_len // self.win_stride * self.win_stride
+        # non_padded_length = int((((self.args.seq_len - self.args.win_size) / self.win_stride) + 1) // 1 * self.win_stride)
+        # # print(non_padded_length)
+        #
+        # out = f.interpolate(out, size=non_padded_length)
+        # # print("7", out.shape)
+        #
+        # leftpad = (self.args.seq_len - non_padded_length) // 2
+        # rightpad = self.args.seq_len - non_padded_length - leftpad
+        #
+        # # out = f.pad(out, (leftpad, rightpad),
+        # #             mode="replicate")
+        # # out = f.pad(out, (0, self.args.seq_len - non_padded_length),
+        # #             mode="replicate")
+        # out = f.pad(out, (leftpad, rightpad), mode="replicate")
+        # print("8", out.shape)
+
+        out = interpolate_and_pad(out, self.win_stride, self.args.seq_len)
 
         out = out.permute(0, 2, 1)
+        # print("9", out.shape)
+        # quit()
 
         return out
 
@@ -285,3 +488,91 @@ class TrainedPositionalEmbedding(nn.Module):
     def forward(self, inp):
         return self.apply_embedding(inp)
 
+
+def interpolate_and_pad(inp, upsample_factor, target_len):
+
+    bs, n_chann, original_len = inp.shape
+    non_padded_upsampled_len = original_len * upsample_factor
+    inp = f.interpolate(inp, size=non_padded_upsampled_len)
+    left_pad = (target_len - non_padded_upsampled_len) // 2
+    right_pad = target_len - non_padded_upsampled_len - left_pad
+    inp = f.pad(inp, (left_pad, right_pad), mode="replicate")
+
+    return inp
+
+# Below this, there is only overwritten pytorch code
+from torch.nn import MultiheadAttention, Linear, Dropout, LayerNorm
+from torch import Tensor
+from typing import Optional
+import torch.nn.functional as F
+
+class TransformerEncoderLayer(nn.Module):
+    r"""TransformerEncoderLayer is made up of self-attn and feedforward network.
+    This standard encoder layer is based on the paper "Attention Is All You Need".
+    Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
+    Lukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. In Advances in
+    Neural Information Processing Systems, pages 6000-6010. Users may modify or implement
+    in a different way during application.
+
+    Args:
+        d_model: the number of expected features in the input (required).
+        nhead: the number of heads in the multiheadattention models (required).
+        dim_feedforward: the dimension of the feedforward network model (default=2048).
+        dropout: the dropout value (default=0.1).
+        activation: the activation function of intermediate layer, relu or gelu (default=relu).
+
+    Examples::
+        >>> encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8)
+        >>> src = torch.rand(10, 32, 512)
+        >>> out = encoder_layer(src)
+    """
+
+    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"):
+        super(TransformerEncoderLayer, self).__init__()
+        self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
+        # Implementation of Feedforward model
+        self.linear1 = Linear(d_model, dim_feedforward)
+        self.dropout = Dropout(dropout)
+        self.linear2 = Linear(dim_feedforward, d_model)
+
+        self.norm1 = LayerNorm(d_model)
+        self.norm2 = LayerNorm(d_model)
+        self.dropout1 = Dropout(dropout)
+        self.dropout2 = Dropout(dropout)
+
+        self.activation = _get_activation_fn(activation)
+
+    def __setstate__(self, state):
+        if 'activation' not in state:
+            state['activation'] = F.relu
+        super(TransformerEncoderLayer, self).__setstate__(state)
+
+    def forward(self, src: Tensor, src_mask: Optional[Tensor] = None, src_key_padding_mask: Optional[Tensor] = None, need_weights=False) -> Tensor:
+        r"""Pass the input through the encoder layer.
+
+        Args:
+            src: the sequence to the encoder layer (required).
+            src_mask: the mask for the src sequence (optional).
+            src_key_padding_mask: the mask for the src keys per batch (optional).
+
+        Shape:
+            see the docs in Transformer class.
+        """
+        src2, attention = self.self_attn(src, src, src, attn_mask=src_mask,
+                              key_padding_mask=src_key_padding_mask, need_weights=need_weights)
+
+        src = src + self.dropout1(src2)
+        src = self.norm1(src)
+        src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
+        src = src + self.dropout2(src2)
+        src = self.norm2(src)
+        return src, attention
+
+
+def _get_activation_fn(activation):
+    if activation == "relu":
+        return F.relu
+    elif activation == "gelu":
+        return F.gelu
+
+    raise RuntimeError("activation should be relu/gelu, not {}".format(activation))

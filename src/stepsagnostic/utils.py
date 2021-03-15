@@ -90,6 +90,8 @@ def adjust_learning_rate(base_lr, lr_decay, optimizer, epoch):
     return lr
 
 
+
+
 class EncodeBinary:
 
     def __call__(self, inp):
