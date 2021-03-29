@@ -129,6 +129,125 @@ class ReferencePanelDataset(Dataset):
         return item
 
 
+class ReferencePanelMultiChmDataset(Dataset):
+
+    def __init__(self, mixed_h5, reference_panel_h5, n_refs, n_classes,
+                 samples_per_chm, transforms):
+
+        # This dict tells which indices are associated to which chromosomes
+        index_range_per_chm = {}
+        last_chm = None
+        for chm in samples_per_chm:
+            if last_chm is None:
+                index_range_per_chm[chm] = [0, samples_per_chm[chm] - 1]
+            else:
+                index_range_per_chm[chm] = [
+                    index_range_per_chm[last_chm][-1] + 1,
+                    index_range_per_chm[last_chm][-1] + samples_per_chm[chm]]
+            last_chm = chm
+        self.index_range_per_chm = index_range_per_chm
+
+        reference_panel_file = h5py.File(reference_panel_h5, "r")
+        mixed_file = h5py.File(mixed_h5)
+
+        self.mixed_vcf = {}
+        self.mixed_labels = {}
+        for chm in mixed_file:
+            self.mixed_vcf[chm] = mixed_file[chm]["vcf"]
+            self.mixed_labels[chm] = mixed_file[chm]["labels"]
+
+        self.reference_panel = {}
+        for chm in reference_panel_file:
+            self.reference_panel[chm] = ReferencePanel(
+                reference_panel_file[chm], n_refs, n_classes)
+
+        self.n_refs = n_refs
+        self.n_classes = n_classes
+
+        self.transforms = transforms
+
+    def __len__(self):
+        raise NotImplementedError()
+        return self.mixed_vcf.shape[0]
+
+    def which_chm_and_index(self, index):
+        for chm in self.index_range_per_chm.keys():
+            if index >= self.index_range_per_chm[chm][0] and index <= \
+                    self.index_range_per_chm[chm][1]:
+                return chm, index - self.index_range_per_chm[chm][0]
+        raise ValueError()
+
+    def __getitem__(self, item):
+
+        chm, item = self.which_chm_and_index(item)
+
+        item = {
+            "mixed_vcf": self.mixed_vcf[chm][item].astype(float),
+            "mixed_labels": self.mixed_labels[chm][item]
+        }
+
+        item["ref_panel"] = self.reference_panel[chm].sample_reference_panel()
+
+        item = ref_pan_to_tensor(item)
+
+        if self.transforms is not None:
+            item = self.transforms(item)
+
+        return item
+
+
+class SameChmSampler:
+
+    def __init__(self, chm_samples, batch_size):
+
+        self.batch_size = batch_size
+
+        chm_samples = [chm_samples[x] for x in chm_samples.keys()]
+
+        self.chm_start_indices = [0]
+        for i, x in enumerate(chm_samples):
+            self.chm_start_indices.append(self.chm_start_indices[i] + x)
+        # print(self.chm_start_indices)
+        self.n_chms = len(chm_samples)
+
+        all_indices = list(range(self.chm_start_indices[-1]))
+
+        self.chm_ranges = {}
+
+        # Each element of the dict is a chromosome
+        for i in range(self.n_chms):
+            self.chm_ranges[i] = all_indices[self.chm_start_indices[i]:
+                                             self.chm_start_indices[i + 1]]
+
+    def __iter__(self):
+
+        for i in range(self.n_chms):
+            random.shuffle(self.chm_ranges[i])
+
+        chm_ranges_split = {}
+        for chm in range(self.n_chms):
+            n_batches = len(self.chm_ranges[chm]) // self.batch_size
+            chm_ranges_split[chm] = [self.chm_ranges[chm][i * self.batch_size:(i + 1) * self.batch_size]
+                                     for i in range(n_batches)]
+
+        # print(chm_ranges_split)
+
+        all_slices = []
+        for i in range(self.n_chms):
+            all_slices += chm_ranges_split[i]
+        random.shuffle(all_slices)
+        for chm_slice in all_slices:
+            yield chm_slice
+
+def get_num_samples_per_chromosome(h5_file):
+    h5_file = h5py.File(h5_file)
+    samples_count = {}
+    for chm in h5_file:
+        samples_count[chm] = h5_file[chm]["vcf"].shape[0]
+    print("samples per chromosome:", samples_count)
+    return samples_count
+
+
 def reference_panel_collate(batch):
     ref_panel = []
     for x in batch:

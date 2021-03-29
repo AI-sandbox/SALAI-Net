@@ -8,7 +8,7 @@ import torchvision
 
 from stepsagnostic import train
 from models import AgnosticConvModel
-from dataloaders import ReferencePanelDataset, reference_panel_collate
+from dataloaders import ReferencePanelDataset, reference_panel_collate, ReferencePanelMultiChmDataset, get_num_samples_per_chromosome, SameChmSampler
 from stepsagnostic import build_transforms
 
 from models.lainet import LAINetOriginal
@@ -20,7 +20,8 @@ parser.add_argument("--exp", type=str, default="exp/default_exp")
 
 parser.add_argument("--train-mixed", type=str, default="data/benet_generations/4classes/chm22/train1_8gens600/vcf_and_labels.h5")
 parser.add_argument("--valid-mixed", type=str, default="data/benet_generations/4classes/chm22/val_8gen200/vcf_and_labels.h5")
-parser.add_argument("--ref-panel", type=str, default=  "data/benet_generations/4classes/chm22/train2_0gen/vcf_and_labels.h5")
+parser.add_argument("--train-ref-panel", type=str, default="data/benet_generations/4classes/chm22/train2_0gen/vcf_and_labels.h5")
+parser.add_argument("--valid-ref-panel", type=str, default="data/benet_generations/4classes/chm22/train2_0gen/vcf_and_labels.h5")
 
 # parser.add_argument("--train-mixed", type=str, default="data/benet_generations/chm22/train_8gens1k/vcf_and_labels.h5")
 # parser.add_argument("--valid-mixed", type=str, default="data/benet_generations/chm22/val_8gens100/vcf_and_labels.h5")
@@ -35,13 +36,18 @@ parser.add_argument("-b", "--batch-size", type=int, default=32)
 parser.add_argument("--lr", type=float, default=0.01)
 parser.add_argument("--lr-decay", type=int, default=-1)
 
+parser.add_argument("--update-every", type=int, default=8)
+
+parser.add_argument("--inpref-oper", type=str, choices=["XOR",
+                                                        "AND"],
+                    default="XOR")
 parser.add_argument("--smoother", type=str, choices=["1conv",
                                                      "2conv",
                                                      "3convdil",
                                                      "1TransfEnc"],
                     default="1conv")
 parser.add_argument("--base-model", type=str, choices=["SFC", "SCS", "SCC"],
-                    default="SFC")
+                    default="SCC")
 parser.add_argument("--pos-emb", type=str, choices=["linpos",
                                                     "trained1",
                                                     "trained2",
@@ -60,10 +66,12 @@ parser.add_argument("--loss", type=str, default="BCE", choices=["BCE"])
 parser.add_argument("--resume", dest="resume", action='store_true')
 
 
-parser.add_argument("--seq-len", type=int, default=317408)
+# parser.add_argument("--seq-len", type=int, default=317408)
 parser.add_argument("--n-classes", type=int, default=4)
 
-parser.add_argument("--n-refs", type=int, default=16)
+parser.add_argument("--multi-chm-train", dest="multi_chm_train", action='store_true')
+
+parser.add_argument("--n-refs", type=int, default=32)
 
 
 parser.add_argument("--comment", type=str, default=None)
@@ -93,19 +101,30 @@ if __name__ == '__main__':
     model = AgnosticConvModel(args)
 
     transforms = build_transforms(args)
-
-    train_dataset = ReferencePanelDataset(mixed_h5=args.train_mixed,
-                                          reference_panel_h5=args.ref_panel,
-                                          n_classes=args.n_classes,
-                                          n_refs=args.n_refs,
-                                          transforms=transforms)
+    if not args.multi_chm_train:
+        train_dataset = ReferencePanelDataset(mixed_h5=args.train_mixed,
+                                              reference_panel_h5=args.train_ref_panel,
+                                              n_classes=args.n_classes,
+                                              n_refs=args.n_refs,
+                                              transforms=transforms)
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate)
+    else:
+        samples_per_chromosome = get_num_samples_per_chromosome(args.train_mixed)
+        sampler = SameChmSampler(samples_per_chromosome, batch_size=args.batch_size)
+        train_dataset = ReferencePanelMultiChmDataset(mixed_h5=args.train_mixed,
+                                              reference_panel_h5=args.train_ref_panel,
+                                              n_classes=args.n_classes,
+                                              n_refs=args.n_refs,
+                                              samples_per_chm=samples_per_chromosome,
+                                              transforms=transforms)
+        train_loader = DataLoader(train_dataset, batch_sampler=sampler,
+                            collate_fn=reference_panel_collate)
     valid_dataset = ReferencePanelDataset(mixed_h5=args.valid_mixed,
-                                          reference_panel_h5=args.ref_panel,
+                                          reference_panel_h5=args.valid_ref_panel,
                                           n_classes=args.n_classes,
                                           n_refs=args.n_refs,
                                           transforms=transforms)
 
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate)
     valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate)
 
     # t = time.time()

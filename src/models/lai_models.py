@@ -312,7 +312,7 @@ class AgnosticConvModel(nn.Module):
         super(AgnosticConvModel, self).__init__()
         self.args = args
 
-        ninp = 28
+        ninp = args.n_refs
         fchid = 30
         fcout = smooth_in = 30
 
@@ -321,6 +321,15 @@ class AgnosticConvModel(nn.Module):
         else:
             self.win_stride = args.win_stride
 
+        # Which input representation wrt the templates:
+        if args.inpref_oper == "XOR":
+            self.inpref_oper = XOR()
+        elif args.inpref_oper == "AND":
+            self.inpref_oper = AND()
+        else:
+            raise ValueError()
+
+        # Which base model
         if args.base_model == "SFC":
             self.base_model = SlidingFullyConnected(win_size=args.win_size, stride=self.win_stride, ninp=ninp,
                                              nhid=fchid, nout=fcout)
@@ -334,7 +343,6 @@ class AgnosticConvModel(nn.Module):
                 nn.BatchNorm1d(args.n_refs))
             smooth_in = args.n_refs
 
-        # dilation = int(400 * 400 / args.win_size // self.win_stride)
         dilation = 1
         dilated_kernel_size = 75 + 74 * (dilation - 1)
         #
@@ -343,6 +351,7 @@ class AgnosticConvModel(nn.Module):
 
         if args.smoother == "1conv":
             # kernel_size = 150
+            smooth_in = 4
             kernel_size = 75
             self.smoother = nn.Conv1d(smooth_in, args.n_classes, kernel_size=kernel_size,
                                   padding=padding, dilation=dilation)
@@ -351,7 +360,8 @@ class AgnosticConvModel(nn.Module):
             self.smoother = nn.Sequential(
                 nn.Conv1d(smooth_in, 30, kernel_size=75, padding=padding, dilation=dilation),
                 # nn.ReLU(),
-                nn.BatchNorm1d(30),
+                # nn.BatchNorm1d(30),
+                nn.Softmax(dim=1),
                 nn.Conv1d(30, args.n_classes, kernel_size=75, padding=padding,dilation=dilation),
             )
         elif args.smoother == "3convdil":
@@ -367,49 +377,36 @@ class AgnosticConvModel(nn.Module):
             raise ValueError()
 
         if args.dropout > 0:
+            print("Dropout=", args.dropout)
             self.dropout = nn.Dropout(p=args.dropout)
         else:
+            print("No dropout")
             self.dropout = nn.Sequential()
 
-    def multiply_ref_panel(self, mixed, ref_panel):
-        all_refs = [ref_panel[ancestry] for ancestry in ref_panel.keys()]
-        all_refs = torch.cat(all_refs, dim=0)
-        return all_refs * mixed.unsqueeze(0)
+        refs_per_class = args.n_refs // args.n_classes
+        self.maxpool = nn.MaxPool2d(kernel_size=(refs_per_class, 1),
+                                    stride=(refs_per_class, 1))
+
+
 
     def forward(self, input_mixed, ref_panel):
-        out = []
-        for inp, ref in zip(input_mixed, ref_panel):
-            out.append(self.multiply_ref_panel(inp, ref))
-        out = torch.stack(out)
+
+        seq_len = input_mixed.shape[-1]
+
+        out = self.inpref_oper(input_mixed, ref_panel)
 
         out = self.base_model(out)
+
+        out = out.unsqueeze(1)
+        out = self.maxpool(out)
+        out = out.squeeze(1)
 
         out = self.dropout(out)
 
         out = self.smoother(out)
 
+        out = interpolate_and_pad(out, self.win_stride, seq_len)
 
-        # print("6", out.shape)
-
-
-        # non_padded_length = self.args.seq_len // self.win_stride * self.win_stride
-        # non_padded_length = int((((self.args.seq_len - self.args.win_size) / self.win_stride) + 1) // 1 * self.win_stride)
-        # # print(non_padded_length)
-        #
-        # out = f.interpolate(out, size=non_padded_length)
-        # # print("7", out.shape)
-        #
-        # leftpad = (self.args.seq_len - non_padded_length) // 2
-        # rightpad = self.args.seq_len - non_padded_length - leftpad
-        #
-        # # out = f.pad(out, (leftpad, rightpad),
-        # #             mode="replicate")
-        # # out = f.pad(out, (0, self.args.seq_len - non_padded_length),
-        # #             mode="replicate")
-        # out = f.pad(out, (leftpad, rightpad), mode="replicate")
-        # print("8", out.shape)
-
-        out = interpolate_and_pad(out, self.win_stride, self.args.seq_len)
 
         out = out.permute(0, 2, 1)
         # print("9", out.shape)
@@ -417,6 +414,48 @@ class AgnosticConvModel(nn.Module):
 
         return out
 
+
+def multiply_ref_panel(mixed, ref_panel):
+    all_refs = [ref_panel[ancestry] for ancestry in ref_panel.keys()]
+    all_refs = torch.cat(all_refs, dim=0)
+
+    # print(all_refs.shape, torch.unique(all_refs, return_counts=True))
+    # print(mixed.shape, torch.unique(mixed, return_counts=True))
+    # quit()
+
+    return all_refs * mixed.unsqueeze(0)
+
+# Enconde whether they are equal or diferent
+class XOR(nn.Module):
+    def __init__(self):
+        super(XOR, self).__init__()
+    def forward(self, input_mixed, ref_panel):
+        with torch.no_grad():
+            out = []
+            for inp, ref in zip(input_mixed, ref_panel):
+                out.append(multiply_ref_panel(inp, ref))
+            out = torch.stack(out)
+
+        return out
+
+class AND(nn.Module):
+    def __init__(self):
+        super(AND, self).__init__()
+
+    def forward(self, input_mixed, ref_panel):
+        with torch.no_grad():
+            out = []
+
+            input_mixed = (input_mixed + 1) / 2
+
+            for inp, ref in zip(input_mixed, ref_panel):
+                for chm in ref.keys():
+                    ref[chm] = (ref[chm] + 1) / 2
+
+                out.append(multiply_ref_panel(inp, ref))
+            out = torch.stack(out)
+
+        return out
 
 class PositionalEncoding(nn.Module):
 
@@ -494,6 +533,7 @@ def interpolate_and_pad(inp, upsample_factor, target_len):
     bs, n_chann, original_len = inp.shape
     non_padded_upsampled_len = original_len * upsample_factor
     inp = f.interpolate(inp, size=non_padded_upsampled_len)
+
     left_pad = (target_len - non_padded_upsampled_len) // 2
     right_pad = target_len - non_padded_upsampled_len - left_pad
     inp = f.pad(inp, (left_pad, right_pad), mode="replicate")

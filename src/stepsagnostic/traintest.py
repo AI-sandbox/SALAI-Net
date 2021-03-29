@@ -14,6 +14,7 @@ def train(model, train_loader, valid_loader, args):
 
     criterion = ReshapedCrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    # optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
 
     init_time = time.time()
 
@@ -65,9 +66,12 @@ def train(model, train_loader, valid_loader, args):
 
             loss.backward()
 
-            if(i % 8) == 0:
+            if((i+1) % args.update_every) == 0:
+            # if((i+1) % 8) == 0:
                 optimizer.step()
                 optimizer.zero_grad()
+
+
 
             train_loss_meter.update(loss.item())
 
