@@ -102,8 +102,8 @@ def train(model, train_loader, valid_loader, args):
 
         progress_saver.update_epoch_progess(epoch_data)
 
-
         print("epoch #", n, ":\tVal acc:", val_acc.item(), "\ttime:", time.time()- init_time)
+
 
 def validate(model, val_loader, criterion, args):
 

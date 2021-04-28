@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 import torchvision
 import torch
 from stepsagnostic import validate
-from models import AgnosticConvModel
+from models import AgnosticModel
 from dataloaders import ReferencePanelDataset, reference_panel_collate
 from stepsagnostic import build_transforms, ReshapedCrossEntropyLoss
 
@@ -30,7 +30,8 @@ parser.add_argument("--model", type=str, choices=["VanillaConvNet",
 parser.add_argument("--smoother", type=str, choices=["1conv",
                                                      "2conv",
                                                      "3convdil",
-                                                     "1TransfEnc"],
+                                                     "1TransfEnc",
+                                                     "anc1conv"],
                     default="1conv")
 parser.add_argument("--pos-emb", type=str, choices=["linpos",
                                                     "trained1",
@@ -45,7 +46,18 @@ parser.add_argument("--win-stride", type=int, default=-1)
 parser.add_argument("--dropout", type=float, default=-1)
 
 
+parser.add_argument("--inpref-oper", type=str, choices=["XOR",
+                                                        "AND"],
+                    default="XOR")
+
+parser.add_argument("--fst", dest="fst", action='store_true')
+
+
 parser.add_argument("--base-model", type=str, choices=["SFC", "SCS", "SCC"], default="SFC")
+
+parser.add_argument("--ref-pooling", type=str, choices=["maxpool", "topk"],
+                    default="maxpool")
+parser.add_argument("--topk-k", type=int, default=2)
 
 
 parser.add_argument("--loss", type=str, default="BCE", choices=["BCE"])
@@ -77,7 +89,7 @@ if __name__ == '__main__':
     # else:
     #     raise ValueError()
 
-    model = AgnosticConvModel(args)
+    model = AgnosticModel(args)
 
     model.load_state_dict(torch.load(args.model_cp))
 

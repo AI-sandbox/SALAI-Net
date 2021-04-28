@@ -71,8 +71,9 @@ class ReferencePanel:
         reference_samples = {}
 
         for ancestry in self.reference_panel_index_dict.keys():
+            n_samples = min(n_sample_per_class, len(self.reference_panel_index_dict[ancestry]))
             indexes = random.sample(self.reference_panel_index_dict[ancestry],
-                                    n_sample_per_class)
+                                    n_samples)
             reference_samples[ancestry] = []
             for i in indexes:
                 reference_samples[ancestry].append(self.reference_vcf[i])

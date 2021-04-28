@@ -121,8 +121,6 @@ def to_device(item, device):
     item["mixed_vcf"] = item["mixed_vcf"].to(device)
     item["mixed_labels"] = item["mixed_labels"].to(device)
 
-
-
     for i, panel in enumerate(item["ref_panel"]):
         for anc in panel.keys():
             item["ref_panel"][i][anc] = item["ref_panel"][i][anc].to(device)

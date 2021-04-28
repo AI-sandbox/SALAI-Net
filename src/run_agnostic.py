@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 import torchvision
 
 from stepsagnostic import train
-from models import AgnosticConvModel
+from models import AgnosticModel
 from dataloaders import ReferencePanelDataset, reference_panel_collate, ReferencePanelMultiChmDataset, get_num_samples_per_chromosome, SameChmSampler
 from stepsagnostic import build_transforms
 
@@ -36,18 +36,28 @@ parser.add_argument("-b", "--batch-size", type=int, default=32)
 parser.add_argument("--lr", type=float, default=0.01)
 parser.add_argument("--lr-decay", type=int, default=-1)
 
-parser.add_argument("--update-every", type=int, default=8)
+parser.add_argument("--update-every", type=int, default=1)
 
 parser.add_argument("--inpref-oper", type=str, choices=["XOR",
                                                         "AND"],
                     default="XOR")
+parser.add_argument("--fst", dest="fst", action='store_true')
+
+
 parser.add_argument("--smoother", type=str, choices=["1conv",
                                                      "2conv",
                                                      "3convdil",
-                                                     "1TransfEnc"],
+                                                     "1TransfEnc",
+                                                     "anc1conv",
+                                                     "anc2conv"],
                     default="1conv")
 parser.add_argument("--base-model", type=str, choices=["SFC", "SCS", "SCC"],
-                    default="SCC")
+                    default="SCS")
+parser.add_argument("--ref-pooling", type=str, choices=["maxpool", "topk"],
+                    default="maxpool")
+parser.add_argument("--topk-k", type=int, default=2)
+
+
 parser.add_argument("--pos-emb", type=str, choices=["linpos",
                                                     "trained1",
                                                     "trained2",
@@ -56,7 +66,7 @@ parser.add_argument("--pos-emb", type=str, choices=["linpos",
                     default=None)
 parser.add_argument("--transf-emb", dest="transf_emb", action='store_true')
 
-parser.add_argument("--win-size", type=int, default=400)
+parser.add_argument("--win-size", type=int, default=1200)
 parser.add_argument("--win-stride", type=int, default=-1)
 parser.add_argument("--dropout", type=float, default=-1)
 
@@ -65,14 +75,12 @@ parser.add_argument("--loss", type=str, default="BCE", choices=["BCE"])
 
 parser.add_argument("--resume", dest="resume", action='store_true')
 
-
 # parser.add_argument("--seq-len", type=int, default=317408)
 parser.add_argument("--n-classes", type=int, default=4)
 
 parser.add_argument("--multi-chm-train", dest="multi_chm_train", action='store_true')
 
-parser.add_argument("--n-refs", type=int, default=32)
-
+parser.add_argument("--n-refs", type=int, default=60)
 
 parser.add_argument("--comment", type=str, default=None)
 
@@ -88,17 +96,8 @@ if __name__ == '__main__':
             args.resume = True
     print(args)
 
-    # if args.model == "VanillaConvNet":
-    #     model = VanillaConvNet(args)
-    #     # model = DevModel(7)
-    #
-    # elif args.model == "LAINet":
-    #     model = LAINetOriginal(args.seq_len, args.n_classes,
-    #                            window_size=args.win_size, is_haploid=True)
-    # else:
-    #     raise ValueError()
-
-    model = AgnosticConvModel(args)
+    # model = AgnosticConvModel(args)
+    model = AgnosticModel(args)
 
     transforms = build_transforms(args)
     if not args.multi_chm_train:
@@ -126,13 +125,6 @@ if __name__ == '__main__':
                                           transforms=transforms)
 
     valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate)
-
-    # t = time.time()
-    # for x in train_loader:
-    #     pass
-    # print("loop time", time.time() - t)
-
-
 
     if not args.resume:
         if os.path.isdir(args.exp):
