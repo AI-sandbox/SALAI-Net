@@ -44,7 +44,6 @@ def train(model, train_loader, valid_loader, args):
         init_epoch += 1
 
     model.to(device)
-
     for n in range(init_epoch, args.num_epochs):
         model.train()
         train_loss_meter.reset()
@@ -61,7 +60,6 @@ def train(model, train_loader, valid_loader, args):
             #     out_base, out = model(batch["vcf"].to(device))
             batch = to_device(batch, device)
             out = model(batch["mixed_vcf"], batch["ref_panel"])
-
             loss = criterion(out, batch["mixed_labels"].to(device))
 
             loss.backward()

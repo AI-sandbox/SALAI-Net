@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as f
 
+import numpy as np
+
 import math
 
 import time
@@ -199,6 +201,36 @@ class SlidingChannelSum(nn.Module):
         inp = inp.squeeze(1)
         return inp
 
+class MultisizeSlidingChannelSum(nn.Module):
+
+    def __init__(self, win_sizes):
+        super(MultisizeSlidingChannelSum, self).__init__()
+
+        self.kernels_and_strides = []
+
+        for size in win_sizes:
+
+            kernel = torch.ones(1, 1, size).float() / size
+            # We pass is as parameter but freeze it
+            self.kernels_and_strides.append({"kernel": nn.Parameter(kernel, requires_grad=False),
+                                 "stride": size})
+
+    def forward(self, inp):
+
+        inp = inp.unsqueeze(1)
+
+        out = []
+
+        for kernel_and_stride in self.kernels_and_strides:
+
+            kernel = kernel_and_stride["kernel"]
+            stride = kernel_and_stride["stride"]
+
+            out.append(f.conv1d(inp, kernel, stride=(stride)).squeeze(1))
+        return out
+
+
+
 class SlidingChannelSumFixedSize(nn.Module):
     def __init__(self, win_size, stride):
         super(SlidingChannelSumFixedSize, self).__init__()
@@ -276,9 +308,22 @@ class TwoConvDilSmoother(nn.Module):
         return hidd, out
 
 class AncestryLevelConvSmoother(nn.Module):
-    def __init__(self, kernel_size, padding):
+    def __init__(self, kernel_size, padding, init="rand"):
         super(AncestryLevelConvSmoother, self).__init__()
         self.conv = nn.Conv2d(1, 1, (1, kernel_size), padding=(0, padding))
+
+        if init == "gauss_filter":
+            var = 0.2
+            x = np.arange(kernel_size) / kernel_size - 0.5
+            kernel = np.exp(- (x/var)**2)
+            kernel = torch.tensor(kernel).unsqueeze(0).unsqueeze(0).unsqueeze(0).float() * 7
+
+            self.conv.weight = nn.Parameter(kernel)
+
+        elif init == "rand":
+            pass
+        else:
+            raise ValueError()
 
     def forward(self, inp):
         inp = inp.unsqueeze(1)
@@ -290,12 +335,18 @@ class AncestryLevel2ConvSmoother(nn.Module):
     def __init__(self, n_kernels, kernel_size, padding):
         super(AncestryLevel2ConvSmoother, self).__init__()
 
-        self.conv = nn.Conv2d(in_channels=1, out_channels=n_kernels, kernel_size=(1, kernel_size), padding=(0, padding))
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=n_kernels, kernel_size=(1, kernel_size), padding=(0, padding))
+        self.conv2 = nn.Conv2d(in_channels=n_kernels, out_channels=1, kernel_size=(1, 1), padding=(0, 0))
 
     def forward(self, inp):
         inp = inp.unsqueeze(1)
-        inp = self.conv(inp)
-        inp = torch.mean(inp, dim=1)
+
+        inp = self.conv1(inp)
+
+        inp = F.relu(inp)
+        inp = self.conv2(inp)
+        inp = inp.squeeze(1)
+
         return inp
 
 class RefMaxPool(nn.Module):
@@ -485,6 +536,8 @@ class AgnosticModel(nn.Module):
                 nn.BatchNorm1d(args.n_refs))
             smooth_in = args.n_refs
 
+
+
         if args.ref_pooling == "maxpool":
             smooth_in = args.n_classes
             self.ref_pooling = RefMaxPool()
@@ -533,13 +586,16 @@ class AgnosticModel(nn.Module):
 
         t_0 = time.time()
         seq_len = input_mixed.shape[-1]
-        out = self.inpref_oper(input_mixed, ref_panel)
 
-        if self.args.fst:
-            fst = compute_batch_fst(ref_panel)
-            out = apply_fst(out, fst)
-            # torch.save(fst, "fst_" + ".pt")
-            # quit()
+        with torch.no_grad():
+
+            out = self.inpref_oper(input_mixed, ref_panel)
+
+            if self.args.fst:
+                fst = compute_batch_fst(ref_panel)
+                out = apply_fst(out, fst)
+                # torch.save(fst, "fst_" + ".pt")
+                # quit()
 
         out_ = []
         for x in out:
@@ -563,6 +619,149 @@ class AgnosticModel(nn.Module):
         out = out.permute(0, 2, 1)
 
         return out
+
+class MultisizeAgnosticModel(nn.Module):
+
+    def __init__(self, args):
+        super(MultisizeAgnosticModel, self).__init__()
+        self.args = args
+
+        ninp = args.n_refs
+        fchid = 30
+        fcout = smooth_in = 30
+
+        if args.win_stride == -1:
+            self.win_stride = args.win_size
+        else:
+            self.win_stride = args.win_stride
+
+        # Which input representation wrt the templates:
+        if args.inpref_oper == "XOR":
+            self.inpref_oper = XOR()
+        else:
+            raise ValueError()
+
+        # Which base model
+        if args.base_model == "SFC":
+            self.base_model = SlidingFullyConnected(win_size=args.win_size, stride=self.win_stride, ninp=ninp,
+                                             nhid=fchid, nout=fcout)
+        elif args.base_model == "SCS":
+            self.base_model = SlidingChannelSum(win_size=args.win_size, stride=self.win_stride)
+            smooth_in = args.n_refs
+        elif args.base_model == "SCSMultisize":
+            self.win_sizes = [30, 100]
+            self.base_models = nn.ModuleList()
+
+            for size in self.win_sizes:
+                self.base_models.append(SlidingChannelSum(win_size=size, stride=size))
+
+            self.win_size_weights = nn.Parameter(
+                torch.ones(len(self.win_sizes)).unsqueeze(1).unsqueeze(1).unsqueeze(1))
+
+        elif args.base_model == "SCC":
+            self.base_model = nn.Sequential(
+                SlidingChannelConnected(win_size=args.win_size, stride=self.win_stride),
+                nn.BatchNorm1d(args.n_refs))
+            smooth_in = args.n_refs
+
+        if args.ref_pooling == "maxpool":
+            smooth_in = args.n_classes
+            self.ref_pooling = RefMaxPool()
+        elif args.ref_pooling == "topk":
+            smooth_in = args.n_classes * args.topk_k
+            self.ref_pooling = TopKPool(args.topk_k)
+
+        # self.add_poolings = AddPoolings(max_n=2)
+        # smooth_in = args.n_classes
+
+        dilation = 1
+        padding = 37
+
+        if args.smoother == "1conv":
+            # kernel_size = 150
+            kernel_size = 75
+
+
+
+            self.smoother = nn.Conv1d(smooth_in, args.n_classes, kernel_size=kernel_size,
+                                    padding=padding, dilation=dilation)
+
+        elif args.smoother == "2conv":
+            self.smoother = nn.Sequential(
+                nn.Conv1d(smooth_in, 30, kernel_size=75, padding=padding, dilation=dilation),
+                nn.BatchNorm1d(30),
+                nn.Conv1d(30, args.n_classes, kernel_size=75, padding=padding,dilation=dilation),
+            )
+        elif args.smoother == "anc1conv":
+
+            self.smoothers = nn.ModuleList()
+            # for _ in range(len(self.win_sizes)):
+            self.smoothers.append(AncestryLevelConvSmoother(kernel_size=75, padding=padding, init="rand"))
+            self.smoothers.append(AncestryLevelConvSmoother(kernel_size=75, padding=padding, init="rand"))
+
+        elif args.smoother == "anc2conv":
+            self.smoother = AncestryLevel2ConvSmoother(n_kernels=10, kernel_size=75,
+                                                      padding=padding)
+        else:
+            raise ValueError()
+
+        if args.dropout > 0:
+            print("Dropout=", args.dropout)
+            self.dropout = nn.Dropout(p=args.dropout)
+        else:
+            print("No dropout")
+            self.dropout = nn.Sequential()
+
+        refs_per_class = args.n_refs // args.n_classes
+        self.maxpool = nn.MaxPool2d(kernel_size=(refs_per_class, 1),
+                                    stride=(refs_per_class, 1))
+
+    def forward(self, input_mixed, ref_panel):
+
+        t_0 = time.time()
+        seq_len = input_mixed.shape[-1]
+
+        with torch.no_grad():
+
+            out = self.inpref_oper(input_mixed, ref_panel)
+
+            if self.args.fst:
+                fst = compute_batch_fst(ref_panel)
+                out = apply_fst(out, fst)
+                # torch.save(fst, "fst_" + ".pt")
+                # quit()
+
+        all_win_size_outs = []
+        for i, base_model in enumerate(self.base_models):
+            smoother = self.smoothers[i]
+            out_ = []
+            for x in out:
+                x_ = {}
+                for c in x.keys():
+                    x_[c] = base_model(x[c])
+                    x_[c] = self.ref_pooling(x_[c])
+                    # x_[c] = self.add_poolings(x_[c])
+                out_.append(x_)
+
+            out = out_
+
+            out_ = stack_ancestries(out_).to(next(self.parameters()).device)
+
+            out_ = self.dropout(out_)
+            out_ = smoother(out_)
+
+            out_ = interpolate_and_pad(out_, self.win_sizes[i], seq_len)
+
+            all_win_size_outs.append(out_)
+        out = torch.stack(all_win_size_outs)
+
+        out = out * self.win_size_weights
+        out = out.mean(dim=0)
+
+        out = out.permute(0, 2, 1)
+
+        return out
+
 
 def multiply_ref_panel_stack_ancestries(mixed, ref_panel):
     all_refs = [ref_panel[ancestry] for ancestry in ref_panel.keys()]

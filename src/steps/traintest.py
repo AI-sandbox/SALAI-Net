@@ -8,13 +8,11 @@ import time
 def train(model, train_loader, valid_loader, args):
 
     device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("device:", device)
 
     model.to(device)
 
     criterion = ReshapedCrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-
     init_time = time.time()
 
     progress_saver = ProgressSaver(args.exp)
@@ -24,6 +22,7 @@ def train(model, train_loader, valid_loader, args):
 
     lr = args.lr
 
+    print("start")
 
     init_epoch = 0
     if args.resume:

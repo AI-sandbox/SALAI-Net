@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 import torchvision
 
 from stepsagnostic import train
-from models import AgnosticModel
+from models import AgnosticModel, MultisizeAgnosticModel
 from dataloaders import ReferencePanelDataset, reference_panel_collate, ReferencePanelMultiChmDataset, get_num_samples_per_chromosome, SameChmSampler
 from stepsagnostic import build_transforms
 
@@ -41,7 +41,7 @@ parser.add_argument("--update-every", type=int, default=1)
 parser.add_argument("--inpref-oper", type=str, choices=["XOR",
                                                         "AND"],
                     default="XOR")
-parser.add_argument("--fst", dest="fst", action='store_true')
+parser.add_argument("--fst", dest="fst", action='store_true', default=True)
 
 
 parser.add_argument("--smoother", type=str, choices=["1conv",
@@ -50,8 +50,9 @@ parser.add_argument("--smoother", type=str, choices=["1conv",
                                                      "1TransfEnc",
                                                      "anc1conv",
                                                      "anc2conv"],
-                    default="1conv")
-parser.add_argument("--base-model", type=str, choices=["SFC", "SCS", "SCC"],
+                    default="anc1conv")
+parser.add_argument("--base-model", type=str, choices=["SFC", "SCS", "SCC",
+                                                       "SCSMultisize"],
                     default="SCS")
 parser.add_argument("--ref-pooling", type=str, choices=["maxpool", "topk"],
                     default="maxpool")
@@ -98,6 +99,7 @@ if __name__ == '__main__':
 
     # model = AgnosticConvModel(args)
     model = AgnosticModel(args)
+    # model = MultisizeAgnosticModel(args)
 
     transforms = build_transforms(args)
     if not args.multi_chm_train:
@@ -134,6 +136,5 @@ if __name__ == '__main__':
 
     with open(args.exp + "/args.pckl", "wb") as f:
         pickle.dump(args, f)
-
     train(model, train_loader, valid_loader, args)
 

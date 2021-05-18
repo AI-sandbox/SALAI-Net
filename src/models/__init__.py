@@ -1,1 +1,1 @@
-from .lai_models import DevModel, VanillaConvNet, TrainedPositionalEmbedding, AgnosticModel
+from .lai_models import DevModel, VanillaConvNet, TrainedPositionalEmbedding, AgnosticModel, MultisizeAgnosticModel

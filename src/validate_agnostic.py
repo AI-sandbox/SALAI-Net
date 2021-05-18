@@ -32,7 +32,7 @@ parser.add_argument("--smoother", type=str, choices=["1conv",
                                                      "3convdil",
                                                      "1TransfEnc",
                                                      "anc1conv"],
-                    default="1conv")
+                    default="anc1conv")
 parser.add_argument("--pos-emb", type=str, choices=["linpos",
                                                     "trained1",
                                                     "trained2",
@@ -53,7 +53,7 @@ parser.add_argument("--inpref-oper", type=str, choices=["XOR",
 parser.add_argument("--fst", dest="fst", action='store_true')
 
 
-parser.add_argument("--base-model", type=str, choices=["SFC", "SCS", "SCC"], default="SFC")
+parser.add_argument("--base-model", type=str, choices=["SFC", "SCS", "SCC"], default="SCS")
 
 parser.add_argument("--ref-pooling", type=str, choices=["maxpool", "topk"],
                     default="maxpool")
