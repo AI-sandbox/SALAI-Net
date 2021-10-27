@@ -26,10 +26,11 @@ parser.add_argument("--valid-ref-panel", type=str, default="data/benet_generatio
 # parser.add_argument("--train-mixed", type=str, default="data/benet_generations/chm22/train_8gens1k/vcf_and_labels.h5")
 # parser.add_argument("--valid-mixed", type=str, default="data/benet_generations/chm22/val_8gens100/vcf_and_labels.h5")
 # parser.add_argument("--ref-panel", type=str, default="data/benet_generations/chm22/train2_0gens/vcf_and_labels.h5")
-
-parser.add_argument("--model", type=str, choices=["VanillaConvNet",
-                                                  "LAINet"],
-                    default="VanillaConvNet")
+#
+# parser.add_argument("--model", type=str, choices=["VanillaConvNet",
+#                                                   "LAINet"],
+#                     default="VanillaConvNet")
+#                     default="VanillaConvNet")
 
 parser.add_argument("--num-epochs", type=int, default=99999999)
 parser.add_argument("-b", "--batch-size", type=int, default=32)
@@ -41,7 +42,9 @@ parser.add_argument("--update-every", type=int, default=1)
 parser.add_argument("--inpref-oper", type=str, choices=["XOR",
                                                         "AND"],
                     default="XOR")
-parser.add_argument("--fst", dest="fst", action='store_true', default=True)
+
+parser.add_argument("--fst", dest="fst", action='store_true', default=False)
+parser.add_argument("--var", dest="var", action='store_true', default=False)
 
 
 parser.add_argument("--smoother", type=str, choices=["1conv",
@@ -54,7 +57,7 @@ parser.add_argument("--smoother", type=str, choices=["1conv",
 parser.add_argument("--base-model", type=str, choices=["SFC", "SCS", "SCC",
                                                        "SCSMultisize"],
                     default="SCS")
-parser.add_argument("--ref-pooling", type=str, choices=["maxpool", "topk"],
+parser.add_argument("--ref-pooling", type=str, choices=["maxpool", "topk", "average"],
                     default="maxpool")
 parser.add_argument("--topk-k", type=int, default=2)
 
@@ -80,6 +83,9 @@ parser.add_argument("--resume", dest="resume", action='store_true')
 parser.add_argument("--n-classes", type=int, default=4)
 
 parser.add_argument("--multi-chm-train", dest="multi_chm_train", action='store_true')
+
+parser.add_argument("--multisize-conv-mix", dest="multisize_conv_mix", action='store_true')
+
 
 parser.add_argument("--n-refs", type=int, default=60)
 

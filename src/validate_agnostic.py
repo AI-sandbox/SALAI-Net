@@ -15,7 +15,7 @@ from models.lainet import LAINetOriginal
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("--model-cp", type=str, default="exp/default_exp/models/best_model.pth")
+parser.add_argument("--model-cp", type=str, default=None)
 
 parser.add_argument("--test-mixed", type=str, default="data/benet_generations/chm22/val_8gens100/vcf_and_labels.h5")
 parser.add_argument("--ref-panel", type=str, default="data/benet_generations/chm22/train2_0gens/vcf_and_labels.h5")
@@ -31,7 +31,8 @@ parser.add_argument("--smoother", type=str, choices=["1conv",
                                                      "2conv",
                                                      "3convdil",
                                                      "1TransfEnc",
-                                                     "anc1conv"],
+                                                     "anc1conv",
+                                                     "none"],
                     default="anc1conv")
 parser.add_argument("--pos-emb", type=str, choices=["linpos",
                                                     "trained1",
@@ -91,7 +92,8 @@ if __name__ == '__main__':
 
     model = AgnosticModel(args)
 
-    model.load_state_dict(torch.load(args.model_cp))
+    if args.model_cp:
+        model.load_state_dict(torch.load(args.model_cp))
 
     transforms = build_transforms(args)
 

@@ -201,35 +201,33 @@ class SlidingChannelSum(nn.Module):
         inp = inp.squeeze(1)
         return inp
 
-class MultisizeSlidingChannelSum(nn.Module):
-
-    def __init__(self, win_sizes):
-        super(MultisizeSlidingChannelSum, self).__init__()
-
-        self.kernels_and_strides = []
-
-        for size in win_sizes:
-
-            kernel = torch.ones(1, 1, size).float() / size
-            # We pass is as parameter but freeze it
-            self.kernels_and_strides.append({"kernel": nn.Parameter(kernel, requires_grad=False),
-                                 "stride": size})
-
-    def forward(self, inp):
-
-        inp = inp.unsqueeze(1)
-
-        out = []
-
-        for kernel_and_stride in self.kernels_and_strides:
-
-            kernel = kernel_and_stride["kernel"]
-            stride = kernel_and_stride["stride"]
-
-            out.append(f.conv1d(inp, kernel, stride=(stride)).squeeze(1))
-        return out
-
-
+# class MultisizeSlidingChannelSum(nn.Module):
+#
+#     def __init__(self, win_sizes):
+#         super(MultisizeSlidingChannelSum, self).__init__()
+#
+#         self.kernels_and_strides = []
+#
+#         for size in win_sizes:
+#
+#             kernel = torch.ones(1, 1, size).float() / size
+#             # We pass is as parameter but freeze it
+#             self.kernels_and_strides.append({"kernel": nn.Parameter(kernel, requires_grad=False),
+#                                  "stride": size})
+#
+#     def forward(self, inp):
+#
+#         inp = inp.unsqueeze(1)
+#
+#         out = []
+#
+#         for kernel_and_stride in self.kernels_and_strides:
+#
+#             kernel = kernel_and_stride["kernel"]
+#             stride = kernel_and_stride["stride"]
+#
+#             out.append(f.conv1d(inp, kernel, stride=(stride)).squeeze(1))
+#         return out
 
 class SlidingChannelSumFixedSize(nn.Module):
     def __init__(self, win_size, stride):
@@ -367,6 +365,17 @@ class TopKPool(nn.Module):
         maximums, indices = torch.topk(inp, k=self.k, dim=0)
         return maximums
 
+class AvgPool(nn.Module):
+    def __init__(self):
+        super(AvgPool, self).__init__()
+    def forward(self, inp):
+
+        inp = inp.mean(dim=0, keepdim=True)
+        return inp
+
+
+
+
 
 # class AgnosticConvModel(nn.Module):
 #
@@ -431,6 +440,7 @@ class TopKPool(nn.Module):
 #                 nn.Conv1d(smooth_in, 30, kernel_size=75, padding=padding,dilation=dilation),
 #                 # nn.ReLU(),
 #                 nn.BatchNorm1d(30),
+
 #                 nn.Conv1d(30, 30, kernel_size=75, padding=padding,dilation=dilation),
 #                 nn.BatchNorm1d(30),
 #                 nn.Conv1d(30, args.n_classes, kernel_size=75, padding=74,dilation=2),
@@ -544,9 +554,15 @@ class AgnosticModel(nn.Module):
         elif args.ref_pooling == "topk":
             smooth_in = args.n_classes * args.topk_k
             self.ref_pooling = TopKPool(args.topk_k)
+            self.add_poolings = AddPoolings(max_n=args.topk_k)
+        elif args.ref_pooling == "average":
+            smooth_in = args.n_classes
+            self.ref_pooling = AvgPool()
+        else:
+            raise ValueError('Wrong type of ref pooling')
 
-        # self.add_poolings = AddPoolings(max_n=2)
-        # smooth_in = args.n_classes
+        #if self.args.ref_pooling == 'avg':
+
 
         dilation = 1
         padding = 37
@@ -566,8 +582,9 @@ class AgnosticModel(nn.Module):
         elif args.smoother == "anc1conv":
             self.smoother = AncestryLevelConvSmoother(kernel_size=75, padding=padding)
         elif args.smoother == "anc2conv":
-            self.smoother = AncestryLevel2ConvSmoother(n_kernels=10, kernel_size=75,
-                                                      padding=padding)
+            self.smoother = AncestryLevel2ConvSmoother(n_kernels=10, kernel_size=75, padding=padding)
+        elif args.smoother == "none":
+            self.smoother = nn.Sequential()
         else:
             raise ValueError()
 
@@ -603,7 +620,8 @@ class AgnosticModel(nn.Module):
             for c in x.keys():
                 x_[c] = self.base_model(x[c])
                 x_[c] = self.ref_pooling(x_[c])
-                # x_[c] = self.add_poolings(x_[c])
+                if self.args.ref_pooling == 'topk':
+                    x_[c] = self.add_poolings(x_[c])
             out_.append(x_)
 
         out = out_
@@ -612,6 +630,7 @@ class AgnosticModel(nn.Module):
         out = stack_ancestries(out).to(next(self.parameters()).device)
 
         out = self.dropout(out)
+
         out = self.smoother(out)
 
         out = interpolate_and_pad(out, self.win_stride, seq_len)
@@ -649,7 +668,7 @@ class MultisizeAgnosticModel(nn.Module):
             self.base_model = SlidingChannelSum(win_size=args.win_size, stride=self.win_stride)
             smooth_in = args.n_refs
         elif args.base_model == "SCSMultisize":
-            self.win_sizes = [30, 100]
+            self.win_sizes = [30, 40, 50]
             self.base_models = nn.ModuleList()
 
             for size in self.win_sizes:
@@ -695,9 +714,8 @@ class MultisizeAgnosticModel(nn.Module):
         elif args.smoother == "anc1conv":
 
             self.smoothers = nn.ModuleList()
-            # for _ in range(len(self.win_sizes)):
-            self.smoothers.append(AncestryLevelConvSmoother(kernel_size=75, padding=padding, init="rand"))
-            self.smoothers.append(AncestryLevelConvSmoother(kernel_size=75, padding=padding, init="rand"))
+            for _ in range(len(self.win_sizes)):
+                self.smoothers.append(AncestryLevelConvSmoother(kernel_size=75, padding=padding, init="rand"))
 
         elif args.smoother == "anc2conv":
             self.smoother = AncestryLevel2ConvSmoother(n_kernels=10, kernel_size=75,
@@ -715,6 +733,10 @@ class MultisizeAgnosticModel(nn.Module):
         refs_per_class = args.n_refs // args.n_classes
         self.maxpool = nn.MaxPool2d(kernel_size=(refs_per_class, 1),
                                     stride=(refs_per_class, 1))
+
+        if self.args.multisize_conv_mix:
+            self.multisize_conv_mixer = nn.Conv2d(3, 1, kernel_size=(1, 201), padding=(0, 100))
+
 
     def forward(self, input_mixed, ref_panel):
 
@@ -743,8 +765,6 @@ class MultisizeAgnosticModel(nn.Module):
                     # x_[c] = self.add_poolings(x_[c])
                 out_.append(x_)
 
-            out = out_
-
             out_ = stack_ancestries(out_).to(next(self.parameters()).device)
 
             out_ = self.dropout(out_)
@@ -756,7 +776,13 @@ class MultisizeAgnosticModel(nn.Module):
         out = torch.stack(all_win_size_outs)
 
         out = out * self.win_size_weights
-        out = out.mean(dim=0)
+
+        if self.args.multisize_conv_mix:
+            out = out.permute(1, 0, 2, 3)
+            out = self.multisize_conv_mixer(out)
+            out = out.squeeze(1)
+        else:
+            out = out.mean(dim=0)
 
         out = out.permute(0, 2, 1)
 
@@ -807,6 +833,29 @@ def apply_fst(multiplied_inputs, fsts):
     for i, x in enumerate(multiplied_inputs):
         for c in x.keys():
             multiplied_inputs[i][c] = multiplied_inputs[i][c] * fsts[i].unsqueeze(0)
+    return multiplied_inputs
+
+
+def compute_stats(populations):
+    populations = torch.cat(populations, dim=0)
+
+    mean = torch.mean(populations, dim=0)
+    var = torch.var(populations, dim=0)
+
+    return {"mean": mean, "var": var}
+
+def compute_batch_stats(batch_ref_panels):
+    stats = []
+    for panel in batch_ref_panels:
+        refs_list = [panel[x].float() for x in panel.keys()]
+        stats.append(compute_stats(refs_list))
+
+    return stats
+
+def multiply_var(multiplied_inputs, stats):
+    for i, x in enumerate(multiplied_inputs):
+        for c in x.keys():
+            multiplied_inputs[i][c] = multiplied_inputs[i][c] * stats[i]["var"].unsqueeze(0)
     return multiplied_inputs
 
 
