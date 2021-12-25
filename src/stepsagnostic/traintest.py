@@ -13,7 +13,16 @@ def train(model, train_loader, valid_loader, args):
     model.to(device)
 
     criterion = ReshapedCrossEntropyLoss()
+
+
+    # Basic
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+    # Different LR for topK weights
+    # optimizer = torch.optim.Adam([
+    #     {'params':model.smoother.parameters()},
+    #     {'params':model.add_poolings.parameters(), 'lr':args.lr/10}
+    #     ], lr=args.lr)
     # optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
 
     init_time = time.time()

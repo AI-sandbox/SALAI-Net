@@ -57,9 +57,15 @@ parser.add_argument("--smoother", type=str, choices=["1conv",
 parser.add_argument("--base-model", type=str, choices=["SFC", "SCS", "SCC",
                                                        "SCSMultisize"],
                     default="SCS")
-parser.add_argument("--ref-pooling", type=str, choices=["maxpool", "topk", "average"],
+
+parser.add_argument("--ref-pooling", type=str, choices=["maxpool", "topk", "average",
+                                                        "baggingmaxpool"],
                     default="maxpool")
+
 parser.add_argument("--topk-k", type=int, default=2)
+parser.add_argument("--bagging-k", type=int, default=10)
+parser.add_argument("--bagging-split", type=float, default=0.2)
+
 
 
 parser.add_argument("--pos-emb", type=str, choices=["linpos",

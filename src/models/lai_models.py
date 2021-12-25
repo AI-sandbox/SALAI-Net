@@ -352,17 +352,44 @@ class RefMaxPool(nn.Module):
         super(RefMaxPool, self).__init__()
 
     def forward(self, inp):
-
         maximums, indices = torch.max(inp, dim=0)
-
         return maximums.unsqueeze(0)
+
+class BaggingMaxPool(nn.Module):
+    def __init__(self, k=20, split=0.25):
+        super(BaggingMaxPool, self).__init__()
+        self.k = k
+        self.split = split
+
+        self.maxpool = RefMaxPool()
+        self.averagepool = AvgPool()
+
+    def forward(self, inp):
+        pooled_refs = []
+
+        total_n = inp.shape[0]
+        select_n = int(total_n * self.split)
+
+        for _ in range(self.k):
+
+            indices = torch.randint(low=0, high=int(total_n), size=(select_n,))
+            selected = inp[indices, :]
+            maxpooled = self.maxpool(selected)
+
+            pooled_refs.append(maxpooled)
+
+        pooled_refs = torch.cat(pooled_refs, dim=0)
+        return self.averagepool(pooled_refs)
 
 class TopKPool(nn.Module):
     def __init__(self, k):
         super(TopKPool, self).__init__()
         self.k = k
     def forward(self, inp):
-        maximums, indices = torch.topk(inp, k=self.k, dim=0)
+        k = self.k
+        if inp.shape[0] < k:
+            k=inp.shape[0]
+        maximums, indices = torch.topk(inp, k=k, dim=0)
         return maximums
 
 class AvgPool(nn.Module):
@@ -502,11 +529,15 @@ def stack_ancestries(inp):
 
 class AddPoolings(nn.Module):
     def __init__(self, max_n=2):
+        self.max_n = max_n
         super(AddPoolings, self).__init__()
-        self.weights=nn.Parameter(torch.ones(max_n).unsqueeze(1))
+        #self.weights=nn.Parameter(torch.ones(max_n).unsqueeze(1))
+        self.weights=nn.Parameter(torch.rand(max_n).unsqueeze(1), requires_grad=True)
+        # self.bias = nn.Parameter(torch.rand(max_n).unsqueeze(1), requires_grad=True)
     def forward(self, inp):
 
-        out = inp * self.weights
+        # inp = inp + self.bias[:min(inp.shape[0], self.max_n)]
+        out = inp * self.weights[:min(inp.shape[0], self.max_n)]
         out = torch.sum(out, dim=0, keepdim=True)
 
         return out
@@ -558,6 +589,8 @@ class AgnosticModel(nn.Module):
         elif args.ref_pooling == "average":
             smooth_in = args.n_classes
             self.ref_pooling = AvgPool()
+        elif args.ref_pooling == "baggingmaxpool":
+            self.ref_pooling = BaggingMaxPool(k=args.bagging_k, split=args.bagging_split)
         else:
             raise ValueError('Wrong type of ref pooling')
 
