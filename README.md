@@ -1,1 +1,1 @@
-# deep_genomics
+# SALAI-Net
