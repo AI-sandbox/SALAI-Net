@@ -17,10 +17,10 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--model-cp", type=str, default=None)
 
-parser.add_argument("--test-mixed", type=str, default="data/benet_generations/chm22/val_8gens100/vcf_and_labels.h5")
-parser.add_argument("--ref-panel", type=str, default="data/benet_generations/chm22/train2_0gens/vcf_and_labels.h5")
+parser.add_argument("--test-mixed", type=str, default="data/benet_generations/4classes/chm22/val_128gen5/vcf_and_labels.h5")
+parser.add_argument("--ref-panel", type=str, default="data/benet_generations/4classes/chm22/train2_0gen/vcf_and_labels.h5")
 
-parser.add_argument("-b", "--batch-size", type=int, default=32)
+parser.add_argument("-b", "--batch-size", type=int, default=16)
 
 
 parser.add_argument("--model", type=str, choices=["VanillaConvNet",
@@ -42,17 +42,9 @@ parser.add_argument("--pos-emb", type=str, choices=["linpos",
                     default=None)
 parser.add_argument("--transf-emb", dest="transf_emb", action='store_true')
 
-parser.add_argument("--win-size", type=int, default=400)
+parser.add_argument("--win-size", type=int, default=200)
 parser.add_argument("--win-stride", type=int, default=-1)
 parser.add_argument("--dropout", type=float, default=-1)
-
-
-parser.add_argument("--inpref-oper", type=str, choices=["XOR",
-                                                        "AND"],
-                    default="XOR")
-
-parser.add_argument("--fst", dest="fst", action='store_true')
-
 
 parser.add_argument("--base-model", type=str, choices=["SFC", "SCS", "SCC"], default="SCS")
 
@@ -105,14 +97,6 @@ if __name__ == '__main__':
 
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate)
 
-    # if not args.resume:
-    #     if os.path.isdir(args.exp):
-    #         raise Exception("Experiment name " + args.exp +" already exists.")
-    #     os.mkdir(args.exp)
-    #     os.mkdir(args.exp + "/models")
-
-    # with open(args.exp + "/args.pckl", "wb") as f:
-    #     pickle.dump(args, f)
     criterion = ReshapedCrossEntropyLoss()
     val_acc, val_loss = validate(model, test_loader, criterion, args)
 
