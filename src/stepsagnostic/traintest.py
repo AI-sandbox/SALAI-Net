@@ -125,10 +125,6 @@ def validate(model, val_loader, criterion, args):
         acc = torch.tensor(0).float()
         for i, batch in enumerate(val_loader):
             batch = to_device(batch, device)
-            # if args.model == "VanillaConvNet":
-            #     out = model(batch["vcf"].to(device))
-            # elif args.model == "LAINet":
-            #     out_base, out = model(batch["vcf"].to(device))
 
             out = model(batch["mixed_vcf"], batch["ref_panel"])
 

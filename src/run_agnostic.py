@@ -15,7 +15,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--exp", type=str, default="exp/default_exp")
 
-parser.add_argument("--train-mixed", type=str, default="data/benet_generations/4classes/chm22/train1_64gen70/vcf_and_labels.h5")
+parser.add_argument("--train-mixed", type=str, default="data/benet_generations/4classes/chm22/train1_128gen20/vcf_and_labels.h5")
 parser.add_argument("--valid-mixed", type=str, default="data/benet_generations/4classes/chm22/val_128gen5/vcf_and_labels.h5")
 parser.add_argument("--train-ref-panel", type=str, default="data/benet_generations/4classes/chm22/train2_0gen/vcf_and_labels.h5")
 parser.add_argument("--valid-ref-panel", type=str, default="data/benet_generations/4classes/chm22/train2_0gen/vcf_and_labels.h5")

@@ -11,12 +11,15 @@ from models import AgnosticModel
 from dataloaders import ReferencePanelDataset, reference_panel_collate
 from stepsagnostic import build_transforms, ReshapedCrossEntropyLoss
 
+from models.lainet import LAINetOriginal
+
 parser = argparse.ArgumentParser()
 
-parser.add_argument("--model-cp", type=str, default=None)
+parser.add_argument("--model-dir", type=str, default=None)
 
 parser.add_argument("--test-mixed", type=str, default="data/benet_generations/4classes/chm22/val_128gen5/vcf_and_labels.h5")
 parser.add_argument("--ref-panel", type=str, default="data/benet_generations/4classes/chm22/train2_0gen/vcf_and_labels.h5")
+parser.add_argument("--ref-panel-map", type=str, default="data/benet_generations/4classes/chm22/train2_0gen/vcf_and_labels.h5")
 
 parser.add_argument("-b", "--batch-size", type=int, default=16)
 
@@ -42,23 +45,13 @@ parser.add_argument("--n-refs", type=int, default=99999)
 if __name__ == '__main__':
 
     args = parser.parse_args()
-    print(args)
-    # if args.resume:
-    #     assert (bool(args.exp))
-    #     with open("%s/args.pckl" % args.exp, "rb") as f:
-    #         args = pickle.load(f)
-    #         args.resume = True
-    # print(args)
 
-    # if args.model == "VanillaConvNet":
-    #     model = VanillaConvNet(args)
-    #     # model = DevModel(7)
-    #
-    # elif args.model == "LAINet":
-    #     model = LAINetOriginal(args.seq_len, args.n_classes,
-    #                            window_size=args.win_size, is_haploid=True)
-    # else:
-    #     raise ValueError()
+    assert (bool(args.exp))
+    print("Loading args from", args.exp)
+    with open("%s/args.pckl" % args.exp, "rb") as f:
+        args = pickle.load(f)
+
+    print(args)
 
     model = AgnosticModel(args)
 
