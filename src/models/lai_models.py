@@ -105,11 +105,12 @@ class AvgPool(nn.Module):
 
 def stack_ancestries(inp):
     out = []
-    for i, x in enumerate(inp):
 
-        out_sample = []
+    # inp is a batch (16)
+    for i, x in enumerate(inp):
+        out_sample = [None] * len(x.keys())
         for ancestry in x.keys():
-            out_sample.append(x[ancestry])
+            out_sample[ancestry] = x[ancestry]
         out_sample = torch.cat(out_sample)
         out.append(out_sample)
     out = torch.stack(out)
@@ -217,7 +218,10 @@ class AgnosticModel(nn.Module):
 
 
 def multiply_ref_panel_stack_ancestries(mixed, ref_panel):
-    all_refs = [ref_panel[ancestry] for ancestry in ref_panel.keys()]
+    all_refs = [None] * len(ref_panel.keys())
+    for ancestry in ref_panel.keys():
+        all_refs[ancestry] = ref_panel[ancestry]
+    #all_refs = [ref_panel[ancestry] for ancestry in ref_panel.keys()]
     all_refs = torch.cat(all_refs, dim=0)
 
     return all_refs * mixed.unsqueeze(0)

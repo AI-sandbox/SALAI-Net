@@ -1,3 +1,4 @@
+import numpy
 import numpy as np
 
 import torch
@@ -5,6 +6,8 @@ from torch.utils.data import Dataset
 import random
 import h5py
 from torch.utils.data.dataloader import default_collate
+import pandas as pd
+import allel
 
 
 def to_tensor(item):
@@ -37,13 +40,69 @@ class GenomeDataset(Dataset):
         return item
 
 
+def load_refpanel_from_h5py(reference_panel_h5):
+
+    reference_panel_file = h5py.File(reference_panel_h5, "r")
+    return reference_panel_file["vcf"], reference_panel_file["labels"]
+
+def load_map_file(map_file):
+    sample_map = pd.read_csv(map_file, sep="\t", header=None)
+    sample_map.columns = ["sample", "ancestry"]
+    ancestry_names, ancestry_labels = np.unique(sample_map['ancestry'], return_inverse=True)
+    samples_list = np.array(sample_map['sample'])
+    return samples_list, ancestry_labels, ancestry_names
+
+
+def load_vcf_samples_in_map(vcf_file, samples_list):
+    # Reading VCF
+    vcf_data = allel.read_vcf(vcf_file)
+
+    # Intersection between samples from VCF and samples from .map
+    inter = np.intersect1d(vcf_data['samples'], samples_list, assume_unique=False, return_indices=True)
+    samp, idx = inter[0], inter[1]
+
+    # Filter only interecting samples
+    snps = vcf_data['calldata/GT'].transpose(1, 2, 0)[idx, ...]
+    samples = vcf_data['samples'][idx]
+
+    # Save header info of VCF file
+    info = {
+        'chm': vcf_data['variants/CHROM'],
+        'pos': vcf_data['variants/POS'],
+        'id': vcf_data['variants/ID'],
+        'ref': vcf_data['variants/REF'],
+        'alt': vcf_data['variants/ALT'],
+    }
+
+    return samples, snps, info
+
+def load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_samplemap):
+    samples_list, ancestry_labels, ancestry_names = load_map_file(reference_panel_samplemap)
+    samples_vcf, snps, info = load_vcf_samples_in_map(reference_panel_vcf, samples_list)
+
+    argidx = np.argsort(samples_vcf)
+    samples_vcf = samples_vcf[argidx]
+    snps = snps[argidx, ...]
+
+    argidx = np.argsort(samples_list)
+    samples_list = samples_list[argidx]
+    ancestry_labels = ancestry_labels[argidx, ...]
+
+    ancestry_labels = np.expand_dims(ancestry_labels, axis=1)
+    ancestry_labels = np.repeat(ancestry_labels, 2, axis=1)
+    ancestry_labels = ancestry_labels.reshape(-1)
+
+    snps = snps.reshape(snps.shape[0] * 2, -1)
+
+    return snps, ancestry_labels
+
 class ReferencePanel:
 
-    def __init__(self, reference_panel_h5, n_refs, n_classes):
+    # def __init__(self, reference_panel_h5, n_refs, n_classes):
+    def __init__(self, reference_panel_vcf, reference_panel_labels, n_refs_per_class, n_classes):
 
-        self.reference_vcf = reference_panel_h5["vcf"]
-        reference_labels = reference_panel_h5["labels"]
-
+        self.reference_vcf = reference_panel_vcf
+        reference_labels = reference_panel_labels
         reference_panel = {}
 
         for i, ref in enumerate(reference_labels):
@@ -64,7 +123,8 @@ class ReferencePanel:
         self.reference_panel_index_dict = reference_panel
 
         self.n_classes = n_classes
-        self.n_refs = n_refs
+        # self.n_refs = n_refs
+        self.n_refs_per_class = n_refs_per_class
 
     def sample_uniform_all_classes(self, n_sample_per_class):
 
@@ -84,7 +144,7 @@ class ReferencePanel:
         return (reference_samples)
 
     def sample_reference_panel(self):
-        return self.sample_uniform_all_classes(n_sample_per_class=self.n_refs // self.n_classes)
+        return self.sample_uniform_all_classes(n_sample_per_class=self.n_refs_per_class)
 
 
 def ref_pan_to_tensor(item):
@@ -96,19 +156,23 @@ def ref_pan_to_tensor(item):
 
     return item
 
-
 class ReferencePanelDataset(Dataset):
+    def __init__(self, mixed_h5, reference_panel_h5,
+                 reference_panel_vcf, reference_panel_map,
+                 n_refs_per_class, n_classes, transforms):
+        # if reference_panel_h5:
+        # reference_panel_snps, reference_panel_labels = load_refpanel_from_h5py(reference_panel_h5)
 
-    def __init__(self, mixed_h5, reference_panel_h5, n_refs, n_classes, transforms):
-        reference_panel_file = h5py.File(reference_panel_h5, "r")
-        self.reference_panel = ReferencePanel(reference_panel_file, n_refs, n_classes)
+        reference_panel_snps, reference_panel_labels = load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_map)
+
+        self.reference_panel = ReferencePanel(reference_panel_snps, reference_panel_labels, n_refs_per_class, n_classes)
 
         mixed_file = h5py.File(mixed_h5)
         self.mixed_vcf = mixed_file["vcf"]
         self.mixed_labels = mixed_file["labels"]
         self.transforms = transforms
 
-        self.n_refs = n_refs
+        # self.n_refs = n_refs
         self.n_classes = n_classes
 
     def __len__(self):
@@ -128,125 +192,6 @@ class ReferencePanelDataset(Dataset):
         if self.transforms is not None:
             item = self.transforms(item)
         return item
-
-
-class ReferencePanelMultiChmDataset(Dataset):
-
-    def __init__(self, mixed_h5, reference_panel_h5, n_refs, n_classes,
-                 samples_per_chm, transforms):
-
-        # This dict tells which indices are associated to which chromosomes
-        index_range_per_chm = {}
-        last_chm = None
-        for chm in samples_per_chm:
-            if last_chm is None:
-                index_range_per_chm[chm] = [0, samples_per_chm[chm] - 1]
-            else:
-                index_range_per_chm[chm] = [
-                    index_range_per_chm[last_chm][-1] + 1,
-                    index_range_per_chm[last_chm][-1] + samples_per_chm[chm]]
-            last_chm = chm
-        self.index_range_per_chm = index_range_per_chm
-
-        reference_panel_file = h5py.File(reference_panel_h5, "r")
-        mixed_file = h5py.File(mixed_h5)
-
-        self.mixed_vcf = {}
-        self.mixed_labels = {}
-        for chm in mixed_file:
-            self.mixed_vcf[chm] = mixed_file[chm]["vcf"]
-            self.mixed_labels[chm] = mixed_file[chm]["labels"]
-
-        self.reference_panel = {}
-        for chm in reference_panel_file:
-            self.reference_panel[chm] = ReferencePanel(
-                reference_panel_file[chm], n_refs, n_classes)
-
-        self.n_refs = n_refs
-        self.n_classes = n_classes
-
-        self.transforms = transforms
-
-    def __len__(self):
-        raise NotImplementedError()
-        return self.mixed_vcf.shape[0]
-
-    def which_chm_and_index(self, index):
-        for chm in self.index_range_per_chm.keys():
-            if index >= self.index_range_per_chm[chm][0] and index <= \
-                    self.index_range_per_chm[chm][1]:
-                return chm, index - self.index_range_per_chm[chm][0]
-        raise ValueError()
-
-    def __getitem__(self, item):
-
-        chm, item = self.which_chm_and_index(item)
-
-        item = {
-            "mixed_vcf": self.mixed_vcf[chm][item].astype(float),
-            "mixed_labels": self.mixed_labels[chm][item]
-        }
-
-        item["ref_panel"] = self.reference_panel[chm].sample_reference_panel()
-
-        item = ref_pan_to_tensor(item)
-
-        if self.transforms is not None:
-            item = self.transforms(item)
-
-        return item
-
-
-class SameChmSampler:
-
-    def __init__(self, chm_samples, batch_size):
-
-        self.batch_size = batch_size
-
-        chm_samples = [chm_samples[x] for x in chm_samples.keys()]
-
-        self.chm_start_indices = [0]
-        for i, x in enumerate(chm_samples):
-            self.chm_start_indices.append(self.chm_start_indices[i] + x)
-        # print(self.chm_start_indices)
-        self.n_chms = len(chm_samples)
-
-        all_indices = list(range(self.chm_start_indices[-1]))
-
-        self.chm_ranges = {}
-
-        # Each element of the dict is a chromosome
-        for i in range(self.n_chms):
-            self.chm_ranges[i] = all_indices[self.chm_start_indices[i]:
-                                             self.chm_start_indices[i + 1]]
-
-    def __iter__(self):
-
-        for i in range(self.n_chms):
-            random.shuffle(self.chm_ranges[i])
-
-        chm_ranges_split = {}
-        for chm in range(self.n_chms):
-            n_batches = len(self.chm_ranges[chm]) // self.batch_size
-            chm_ranges_split[chm] = [self.chm_ranges[chm][i * self.batch_size:(i + 1) * self.batch_size]
-                                     for i in range(n_batches)]
-
-        # print(chm_ranges_split)
-
-        all_slices = []
-        for i in range(self.n_chms):
-            all_slices += chm_ranges_split[i]
-        random.shuffle(all_slices)
-        for chm_slice in all_slices:
-            yield chm_slice
-
-def get_num_samples_per_chromosome(h5_file):
-    h5_file = h5py.File(h5_file)
-    samples_count = {}
-    for chm in h5_file:
-        samples_count[chm] = h5_file[chm]["vcf"].shape[0]
-    print("samples per chromosome:", samples_count)
-    return samples_count
 
 
 def reference_panel_collate(batch):

@@ -8,7 +8,7 @@ import torchvision
 
 from stepsagnostic import train
 from models import AgnosticModel
-from dataloaders import ReferencePanelDataset, reference_panel_collate, ReferencePanelMultiChmDataset, get_num_samples_per_chromosome, SameChmSampler
+from dataloaders import ReferencePanelDataset, reference_panel_collate
 from stepsagnostic import build_transforms
 
 parser = argparse.ArgumentParser()
@@ -81,14 +81,14 @@ if __name__ == '__main__':
     train_dataset = ReferencePanelDataset(mixed_h5=args.train_mixed,
                                           reference_panel_h5=args.train_ref_panel,
                                           n_classes=args.n_classes,
-                                          n_refs=args.n_refs,
+                                          n_refs_per_class=args.n_refs,
                                           transforms=transforms)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate)
 
     valid_dataset = ReferencePanelDataset(mixed_h5=args.valid_mixed,
                                           reference_panel_h5=args.valid_ref_panel,
                                           n_classes=args.n_classes,
-                                          n_refs=args.n_refs,
+                                          n_refs_per_class=args.n_refs,
                                           transforms=transforms)
 
     valid_loader = DataLoader(valid_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate)

@@ -63,7 +63,7 @@ if __name__ == '__main__':
     test_dataset = ReferencePanelDataset(mixed_h5=args.test_mixed,
                                          reference_panel_h5=args.ref_panel,
                                          n_classes=args.n_classes,
-                                         n_refs=args.n_refs,
+                                         n_refs_per_class=args.n_refs,
                                          transforms=transforms)
 
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate)
