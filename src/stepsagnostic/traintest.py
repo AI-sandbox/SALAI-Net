@@ -68,7 +68,7 @@ def train(model, train_loader, valid_loader, args):
             # elif args.model == "LAINet":
             #     out_base, out = model(batch["vcf"].to(device))
             batch = to_device(batch, device)
-            out = model(batch["mixed_vcf"], batch["ref_panel"])
+            out, max_indices = model(batch["mixed_vcf"], batch["ref_panel"])
             loss = criterion(out, batch["mixed_labels"].to(device))
 
             loss.backward()
@@ -126,13 +126,28 @@ def validate(model, val_loader, criterion, args):
         for i, batch in enumerate(val_loader):
             batch = to_device(batch, device)
 
-            out = model(batch["mixed_vcf"], batch["ref_panel"])
+            output = model(batch["mixed_vcf"], batch["ref_panel"])
 
-            acc = acc + ancestry_accuracy(out, batch["mixed_labels"])
-            loss = criterion(out, batch["mixed_labels"])
+            acc = acc + ancestry_accuracy(output["predictions"], batch["mixed_labels"])
+            loss = criterion(output["predictions"], batch["mixed_labels"])
             val_loss.update(loss.item())
 
         acc = acc / len(val_loader.dataset)
 
         return acc, val_loss.get_average()
+
+def inference(model, test_loader, args):
+
+    with torch.no_grad():
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        model.eval().to(device)
+
+        for i, batch in enumerate(test_loader):
+            batch = to_device(batch, device)
+            import pdb
+            pdb.set_trace()
+            out, max_indices = model(batch["mixed_vcf"], batch["ref_panel"])
+
 

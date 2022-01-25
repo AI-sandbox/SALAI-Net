@@ -86,22 +86,30 @@ def load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_samplemap):
 
     argidx = np.argsort(samples_list)
     samples_list = samples_list[argidx]
+
     ancestry_labels = ancestry_labels[argidx, ...]
 
+    # Upsample for maternal and paternal sequences
     ancestry_labels = np.expand_dims(ancestry_labels, axis=1)
     ancestry_labels = np.repeat(ancestry_labels, 2, axis=1)
     ancestry_labels = ancestry_labels.reshape(-1)
 
+    samples_list_upsampled = []
+    for sample_id in samples_list:
+        for _ in range(2): samples_list_upsampled.append(sample_id)
+
     snps = snps.reshape(snps.shape[0] * 2, -1)
 
-    return snps, ancestry_labels
+    return snps, ancestry_labels, samples_list_upsampled
+
 
 class ReferencePanel:
 
-    # def __init__(self, reference_panel_h5, n_refs, n_classes):
-    def __init__(self, reference_panel_vcf, reference_panel_labels, n_refs_per_class, n_classes):
+    def __init__(self, reference_panel_vcf, reference_panel_labels, n_refs_per_class, n_classes, samples_list=None):
 
         self.reference_vcf = reference_panel_vcf
+
+        self.samples_list = samples_list
         reference_labels = reference_panel_labels
         reference_panel = {}
 
@@ -123,25 +131,27 @@ class ReferencePanel:
         self.reference_panel_index_dict = reference_panel
 
         self.n_classes = n_classes
-        # self.n_refs = n_refs
+
         self.n_refs_per_class = n_refs_per_class
 
     def sample_uniform_all_classes(self, n_sample_per_class):
 
         reference_samples = {}
+        reference_samples_ids = {}
 
         for ancestry in self.reference_panel_index_dict.keys():
             n_samples = min(n_sample_per_class, len(self.reference_panel_index_dict[ancestry]))
             indexes = random.sample(self.reference_panel_index_dict[ancestry],
                                     n_samples)
             reference_samples[ancestry] = []
+            reference_samples_ids[ancestry] = []
             for i in indexes:
                 reference_samples[ancestry].append(self.reference_vcf[i])
-
+                reference_samples_ids[ancestry].append(self.samples_list[i])
             reference_samples = {x: np.array(reference_samples[x]) for x in
                                  reference_samples.keys()}
 
-        return (reference_samples)
+        return reference_samples, reference_samples_ids
 
     def sample_reference_panel(self):
         return self.sample_uniform_all_classes(n_sample_per_class=self.n_refs_per_class)
@@ -156,23 +166,27 @@ def ref_pan_to_tensor(item):
 
     return item
 
+
 class ReferencePanelDataset(Dataset):
     def __init__(self, mixed_h5, reference_panel_h5,
                  reference_panel_vcf, reference_panel_map,
                  n_refs_per_class, n_classes, transforms):
         # if reference_panel_h5:
-        # reference_panel_snps, reference_panel_labels = load_refpanel_from_h5py(reference_panel_h5)
+        if reference_panel_h5:
+            print("Loading data from .h5 file", reference_panel_h5)
+            reference_panel_snps, reference_panel_labels = load_refpanel_from_h5py(reference_panel_h5)
+            sample_list = None
+        else:
+            print("Loading data from .vcf file", reference_panel_vcf)
+            reference_panel_snps, reference_panel_labels, samples_list = load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_map)
 
-        reference_panel_snps, reference_panel_labels = load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_map)
-
-        self.reference_panel = ReferencePanel(reference_panel_snps, reference_panel_labels, n_refs_per_class, n_classes)
+        self.reference_panel = ReferencePanel(reference_panel_snps, reference_panel_labels, n_refs_per_class, n_classes, samples_list=samples_list)
 
         mixed_file = h5py.File(mixed_h5)
         self.mixed_vcf = mixed_file["vcf"]
         self.mixed_labels = mixed_file["labels"]
         self.transforms = transforms
 
-        # self.n_refs = n_refs
         self.n_classes = n_classes
 
     def __len__(self):
@@ -185,7 +199,7 @@ class ReferencePanelDataset(Dataset):
             "mixed_labels": self.mixed_labels[item]
         }
 
-        item["ref_panel"] = self.reference_panel.sample_reference_panel()
+        item["ref_panel"], item['reference_ids'] = self.reference_panel.sample_reference_panel()
 
         item = ref_pan_to_tensor(item)
 
@@ -196,11 +210,15 @@ class ReferencePanelDataset(Dataset):
 
 def reference_panel_collate(batch):
     ref_panel = []
+    reference_ids = []
     for x in batch:
         ref_panel.append(x["ref_panel"])
+        reference_ids.append(x["reference_ids"])
         del x["ref_panel"]
+        del x["reference_ids"]
 
     batch = default_collate(batch)
     batch["ref_panel"] = ref_panel
+    batch["reference_ids"] = reference_ids
 
     return batch

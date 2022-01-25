@@ -20,6 +20,10 @@ parser.add_argument("--valid-mixed", type=str, default="data/benet_generations/4
 parser.add_argument("--train-ref-panel", type=str, default="data/benet_generations/4classes/chm22/train2_0gen/vcf_and_labels.h5")
 parser.add_argument("--valid-ref-panel", type=str, default="data/benet_generations/4classes/chm22/train2_0gen/vcf_and_labels.h5")
 
+parser.add_argument("--query", '-q', default=False)
+parser.add_argument("--reference", '-r', default=False)
+parser.add_argument("--map", '-m', default=False)
+
 # parser.add_argument("--train-mixed", type=str, default="data/benet_generations/chm22/train_8gens1k/vcf_and_labels.h5")
 # parser.add_argument("--valid-mixed", type=str, default="data/benet_generations/chm22/val_8gens100/vcf_and_labels.h5")
 # parser.add_argument("--ref-panel", type=str, default="data/benet_generations/chm22/train2_0gens/vcf_and_labels.h5")
@@ -78,15 +82,21 @@ if __name__ == '__main__':
     model = AgnosticModel(args)
 
     transforms = build_transforms(args)
+    print("Loading train data")
     train_dataset = ReferencePanelDataset(mixed_h5=args.train_mixed,
                                           reference_panel_h5=args.train_ref_panel,
+                                          reference_panel_vcf=args.reference,
+                                          reference_panel_map=args.map,
                                           n_classes=args.n_classes,
                                           n_refs_per_class=args.n_refs,
                                           transforms=transforms)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate)
 
+    print("Loading validation data")
     valid_dataset = ReferencePanelDataset(mixed_h5=args.valid_mixed,
                                           reference_panel_h5=args.valid_ref_panel,
+                                          reference_panel_vcf=args.reference,
+                                          reference_panel_map=args.map,
                                           n_classes=args.n_classes,
                                           n_refs_per_class=args.n_refs,
                                           transforms=transforms)

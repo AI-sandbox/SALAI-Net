@@ -15,8 +15,6 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--model-cp", type=str, default=None)
 
-# parser.add_argument("--test-mixed", type=str, default="data/benet_generations/4classes/chm22/val_128gen5/vcf_and_labels.h5")
-# parser.add_argument("--ref-panel", type=str, default="data/benet_generations/4classes/chm22/train2_0gen/vcf_and_labels.h5")
 parser.add_argument("--test-mixed", type=str, default=False)
 parser.add_argument("--ref-panel", type=str, default=False)
 
@@ -53,8 +51,8 @@ if __name__ == '__main__':
 
     model = AgnosticModel(args)
 
-    if args.model_cp:
-        model.load_state_dict(torch.load(args.model_cp))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.load_state_dict(torch.load(args.model_cp, map_location=device))
 
     transforms = build_transforms(args)
 

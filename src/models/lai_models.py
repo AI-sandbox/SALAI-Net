@@ -55,7 +55,8 @@ class RefMaxPool(nn.Module):
 
     def forward(self, inp):
         maximums, indices = torch.max(inp, dim=0)
-        return maximums.unsqueeze(0)
+        print(indices)
+        return maximums.unsqueeze(0), indices
 
 class BaggingMaxPool(nn.Module):
     def __init__(self, k=20, split=0.25):
@@ -79,7 +80,7 @@ class BaggingMaxPool(nn.Module):
             maxpooled = self.maxpool(selected)
 
             pooled_refs.append(maxpooled)
-
+        quit()
         pooled_refs = torch.cat(pooled_refs, dim=0)
         return self.averagepool(pooled_refs)
 
@@ -91,8 +92,10 @@ class TopKPool(nn.Module):
         k = self.k
         if inp.shape[0] < k:
             k=inp.shape[0]
+
         maximums, indices = torch.topk(inp, k=k, dim=0)
-        return maximums
+
+        return maximums, indices[0]
 
 class AvgPool(nn.Module):
     def __init__(self):
@@ -159,18 +162,27 @@ class BaseModel(nn.Module):
         with torch.no_grad():
             out = self.inpref_oper(input_mixed, ref_panel)
         out_ = []
+        max_indices_batch = []
         for x in out:
             x_ = {}
+            max_indices_element = []
             for c in x.keys():
                 x_[c] = self.sliding_window_sum(x[c])
-                x_[c] = self.ref_pooling(x_[c])
+                x_[c], max_indices = self.ref_pooling(x_[c])
                 if self.args.ref_pooling == 'topk':
                     x_[c] = self.add_poolings(x_[c])
+                max_indices_element.append(max_indices)
+
+
             out_.append(x_)
+            max_indices_element = torch.stack(max_indices_element, dim=0)
+            max_indices_batch.append(max_indices_element)
+
+        max_indices_batch = torch.stack(max_indices_batch, dim=0)
 
         out = out_
         del out_
-        return out
+        return out, max_indices_batch
 
 
 class AgnosticModel(nn.Module):
@@ -201,20 +213,26 @@ class AgnosticModel(nn.Module):
 
         seq_len = input_mixed.shape[-1]
 
-
-        out = self.base_model(input_mixed, ref_panel)
-
+        out, max_indices = self.base_model(input_mixed, ref_panel)
+        out_basemodel = out
 
         out = stack_ancestries(out).to(next(self.parameters()).device)
         out = self.dropout(out)
 
-        out = self.smoother(out)
+        out_smoother = out = self.smoother(out)
 
         out = interpolate_and_pad(out, self.args.win_stride, seq_len)
 
         out = out.permute(0, 2, 1)
 
-        return out
+        output = {
+            'predictions':out,
+            'out_basemodel': out_basemodel,
+            'out_smoother': out_smoother,
+            'max_indices': max_indices
+        }
+
+        return output
 
 
 def multiply_ref_panel_stack_ancestries(mixed, ref_panel):
