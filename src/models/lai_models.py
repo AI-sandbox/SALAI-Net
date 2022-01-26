@@ -214,9 +214,11 @@ class AgnosticModel(nn.Module):
         seq_len = input_mixed.shape[-1]
 
         out, max_indices = self.base_model(input_mixed, ref_panel)
-        out_basemodel = out
 
         out = stack_ancestries(out).to(next(self.parameters()).device)
+
+        out_basemodel = out
+
         out = self.dropout(out)
 
         out_smoother = out = self.smoother(out)

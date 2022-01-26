@@ -102,14 +102,22 @@ def load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_samplemap):
 
     return snps, ancestry_labels, samples_list_upsampled
 
+def vcf_to_npy(vcf_file):
+    vcf_data = allel.read_vcf(vcf_file)
+    snps = vcf_data['calldata/GT'].transpose(1, 2, 0)
+    samples = vcf_data['samples']
+
+    return snps
+
 
 class ReferencePanel:
 
-    def __init__(self, reference_panel_vcf, reference_panel_labels, n_refs_per_class, n_classes, samples_list=None):
+    def __init__(self, reference_panel_vcf, reference_panel_labels, n_refs_per_class, samples_list=None):
 
         self.reference_vcf = reference_panel_vcf
 
         self.samples_list = samples_list
+
         reference_labels = reference_panel_labels
         reference_panel = {}
 
@@ -125,41 +133,43 @@ class ReferencePanel:
                 reference_panel[ancestry] = [i]
 
         for ancestry in reference_panel.keys():
-            random.shuffle(reference_panel[ancestry])
+            # random.shuffle(reference_panel[ancestry])
             print(ancestry, len(reference_panel[ancestry]))
 
         self.reference_panel_index_dict = reference_panel
-
-        self.n_classes = n_classes
 
         self.n_refs_per_class = n_refs_per_class
 
     def sample_uniform_all_classes(self, n_sample_per_class):
 
         reference_samples = {}
-        reference_samples_ids = {}
+        reference_samples_names = {}
+        reference_samples_idx = {}
 
         for ancestry in self.reference_panel_index_dict.keys():
             n_samples = min(n_sample_per_class, len(self.reference_panel_index_dict[ancestry]))
             indexes = random.sample(self.reference_panel_index_dict[ancestry],
                                     n_samples)
+            reference_samples_idx[ancestry] = indexes
             reference_samples[ancestry] = []
-            reference_samples_ids[ancestry] = []
+            reference_samples_names[ancestry] = []
             for i in indexes:
                 reference_samples[ancestry].append(self.reference_vcf[i])
-                reference_samples_ids[ancestry].append(self.samples_list[i])
+                reference_samples_names[ancestry].append(self.samples_list[i])
             reference_samples = {x: np.array(reference_samples[x]) for x in
                                  reference_samples.keys()}
 
-        return reference_samples, reference_samples_ids
+        return reference_samples, reference_samples_names, reference_samples_idx
 
     def sample_reference_panel(self):
         return self.sample_uniform_all_classes(n_sample_per_class=self.n_refs_per_class)
 
-
 def ref_pan_to_tensor(item):
+
     item["mixed_vcf"] = torch.tensor(item["mixed_vcf"]).float()
-    item["mixed_labels"] = torch.tensor(item["mixed_labels"]).long()
+
+    if "mixed_labels" in item.keys():
+        item["mixed_labels"] = torch.tensor(item["mixed_labels"]).long()
 
     for c in item["ref_panel"]:
         item["ref_panel"][c] = torch.tensor(item["ref_panel"][c])
@@ -168,9 +178,10 @@ def ref_pan_to_tensor(item):
 
 
 class ReferencePanelDataset(Dataset):
-    def __init__(self, mixed_h5, reference_panel_h5,
+    def __init__(self, mixed_file_path, reference_panel_h5,
                  reference_panel_vcf, reference_panel_map,
-                 n_refs_per_class, n_classes, transforms):
+                 n_refs_per_class, transforms):
+
         # if reference_panel_h5:
         if reference_panel_h5:
             print("Loading data from .h5 file", reference_panel_h5)
@@ -180,26 +191,34 @@ class ReferencePanelDataset(Dataset):
             print("Loading data from .vcf file", reference_panel_vcf)
             reference_panel_snps, reference_panel_labels, samples_list = load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_map)
 
-        self.reference_panel = ReferencePanel(reference_panel_snps, reference_panel_labels, n_refs_per_class, n_classes, samples_list=samples_list)
+        self.reference_panel = ReferencePanel(reference_panel_snps, reference_panel_labels, n_refs_per_class, samples_list=samples_list)
 
-        mixed_file = h5py.File(mixed_h5)
-        self.mixed_vcf = mixed_file["vcf"]
-        self.mixed_labels = mixed_file["labels"]
+        try:
+            mixed_file = h5py.File(mixed_file_path)
+            self.mixed_vcf = mixed_file["vcf"]
+            self.mixed_labels = mixed_file["labels"]
+        except:
+
+            snps = vcf_to_npy(mixed_file_path)
+            n_seq, n_chann, n_snps = snps.shape
+            snps = snps.reshape(n_seq * n_chann, n_snps)
+            self.mixed_vcf = snps
+            self.mixed_labels = None
+
         self.transforms = transforms
-
-        self.n_classes = n_classes
 
     def __len__(self):
         return self.mixed_vcf.shape[0]
 
-    def __getitem__(self, item):
+    def __getitem__(self, index):
 
         item = {
-            "mixed_vcf": self.mixed_vcf[item].astype(float),
-            "mixed_labels": self.mixed_labels[item]
+            "mixed_vcf": self.mixed_vcf[index].astype(float),
         }
+        if self.mixed_labels is not None:
+            item["mixed_labels"] = self.mixed_labels[index]
 
-        item["ref_panel"], item['reference_ids'] = self.reference_panel.sample_reference_panel()
+        item["ref_panel"], item['reference_names'], item['reference_idx'] = self.reference_panel.sample_reference_panel()
 
         item = ref_pan_to_tensor(item)
 
@@ -210,15 +229,19 @@ class ReferencePanelDataset(Dataset):
 
 def reference_panel_collate(batch):
     ref_panel = []
-    reference_ids = []
+    reference_names = []
+    reference_idx = []
     for x in batch:
         ref_panel.append(x["ref_panel"])
-        reference_ids.append(x["reference_ids"])
+        reference_names.append(x["reference_names"])
+        reference_idx.append(x['reference_idx'])
         del x["ref_panel"]
-        del x["reference_ids"]
+        del x["reference_names"]
+        del x['reference_idx']
 
     batch = default_collate(batch)
     batch["ref_panel"] = ref_panel
-    batch["reference_ids"] = reference_ids
+    batch["reference_names"] = reference_names
+    batch["reference_idx"] = reference_idx
 
     return batch

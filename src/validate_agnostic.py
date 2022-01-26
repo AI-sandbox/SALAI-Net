@@ -39,8 +39,6 @@ parser.add_argument("--topk-k", type=int, default=1)
 
 parser.add_argument("--loss", type=str, default="BCE", choices=["BCE"])
 
-parser.add_argument("--n-classes", type=int, default=4)
-
 parser.add_argument("--n-refs", type=int, default=99999)
 
 
@@ -60,7 +58,7 @@ if __name__ == '__main__':
                                          reference_panel_h5=args.ref_panel,
                                          reference_panel_vcf=args.reference,
                                          reference_panel_map=args.map,
-                                         n_classes=args.n_classes,
+                                         # n_classes=args.n_classes,
                                          n_refs_per_class=args.n_refs,
                                          transforms=transforms)
 

@@ -1,7 +1,7 @@
 import torch
 
 from .utils import ancestry_accuracy, ProgressSaver, AverageMeter, ReshapedCrossEntropyLoss,\
-    adjust_learning_rate, to_device
+    adjust_learning_rate, to_device, correct_max_indices, compute_ibd
 
 import time
 
@@ -71,6 +71,7 @@ def train(model, train_loader, valid_loader, args):
             out, max_indices = model(batch["mixed_vcf"], batch["ref_panel"])
             loss = criterion(out, batch["mixed_labels"].to(device))
 
+
             loss.backward()
 
             if((i+1) % args.update_every) == 0:
@@ -127,7 +128,6 @@ def validate(model, val_loader, criterion, args):
             batch = to_device(batch, device)
 
             output = model(batch["mixed_vcf"], batch["ref_panel"])
-
             acc = acc + ancestry_accuracy(output["predictions"], batch["mixed_labels"])
             loss = criterion(output["predictions"], batch["mixed_labels"])
             val_loss.update(loss.item())
@@ -144,10 +144,23 @@ def inference(model, test_loader, args):
 
         model.eval().to(device)
 
+        all_predictions = []
+        all_ibd = []
+
         for i, batch in enumerate(test_loader):
             batch = to_device(batch, device)
-            import pdb
-            pdb.set_trace()
-            out, max_indices = model(batch["mixed_vcf"], batch["ref_panel"])
 
+            output = model(batch["mixed_vcf"], batch["ref_panel"])
+            output['max_indices'] = correct_max_indices(output['max_indices'], batch['reference_idx'])
+
+            ibd = compute_ibd(output)
+            predicted_labels = torch.argmax(output['predictions'], dim=2)
+
+            all_predictions.append(predicted_labels)
+            all_ibd.append(ibd)
+
+        all_predictions = torch.cat(all_predictions, dim=0)
+        all_ibd = torch.cat(all_ibd, dim=0)
+
+        return all_predictions, all_ibd
 

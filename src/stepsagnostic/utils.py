@@ -119,10 +119,55 @@ def build_transforms(args):
 def to_device(item, device):
 
     item["mixed_vcf"] = item["mixed_vcf"].to(device)
-    item["mixed_labels"] = item["mixed_labels"].to(device)
+
+    if "mixed_labels" in item.keys():
+        item["mixed_labels"] = item["mixed_labels"].to(device)
 
     for i, panel in enumerate(item["ref_panel"]):
         for anc in panel.keys():
             item["ref_panel"][i][anc] = item["ref_panel"][i][anc].to(device)
 
     return item
+
+
+def correct_max_indices(max_indices_batch, ref_panel_idx_batch):
+
+    '''
+    for each element of a batch, the dataloader samples randomly a set of founders in random order. For this reason,
+    the argmax values output by the base model will represent different associations of founders, depending on how they have been
+    sampled and ordered. By storing the sampling information during the data loading, we can then correct the argmax outputs
+    into a shared meaning between batches and elements within the batch.
+    '''
+
+    for n in range(len(max_indices_batch)):
+        max_indices = max_indices_batch[n]
+        ref_panel_idx = ref_panel_idx_batch[n]
+        max_indices_ordered = [None] * len(ref_panel_idx.keys())
+        for i, c in enumerate(ref_panel_idx.keys()):
+            max_indices_ordered[i] = max_indices[c]
+        max_indices_ordered = torch.stack(max_indices_ordered)
+
+        for i in range(max_indices.shape[0]):
+            max_indices_ordered[i] = torch.take(torch.tensor(ref_panel_idx[i]), max_indices_ordered[i].cpu())
+        max_indices_batch[n] = max_indices_ordered
+
+    return max_indices_batch
+
+
+def compute_ibd(output):
+
+    all_ibd = []
+    for n in range(output['out_basemodel'].shape[0]):
+
+        classes_basemodel = torch.argmax(output['out_basemodel'][n], dim=0)
+        # classes_smoother = torch.argmax(output['out_smoother'][n], dim=0)
+        ibd = torch.gather(output['max_indices'][n].t(), index=classes_basemodel.unsqueeze(1), dim=1)
+        ibd = ibd.squeeze(1)
+
+        all_ibd.append(ibd)
+
+    all_ibd = torch.stack(all_ibd)
+
+    return all_ibd
+
+
