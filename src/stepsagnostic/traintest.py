@@ -61,25 +61,15 @@ def train(model, train_loader, valid_loader, args):
             lr = adjust_learning_rate(args.lr, args.lr_decay, optimizer, n)
 
         for i, batch in enumerate(train_loader):
-            # break
 
-            # if args.model == "VanillaConvNet":
-            #     out = model(batch["vcf"].to(device))
-            # elif args.model == "LAINet":
-            #     out_base, out = model(batch["vcf"].to(device))
             batch = to_device(batch, device)
-            out, max_indices = model(batch["mixed_vcf"], batch["ref_panel"])
-            loss = criterion(out, batch["mixed_labels"].to(device))
 
-
+            output = model(batch["mixed_vcf"], batch["ref_panel"])
+            loss = criterion(output["predictions"], batch["mixed_labels"].to(device))
             loss.backward()
-
             if((i+1) % args.update_every) == 0:
-            # if((i+1) % 8) == 0:
                 optimizer.step()
                 optimizer.zero_grad()
-
-
 
             train_loss_meter.update(loss.item())
 

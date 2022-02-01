@@ -61,8 +61,6 @@ parser.add_argument("--loss", type=str, default="BCE", choices=["BCE"])
 
 parser.add_argument("--resume", dest="resume", action='store_true')
 
-parser.add_argument("--n-classes", type=int, default=4)
-
 parser.add_argument("--n-refs", type=int, default=99999)
 
 parser.add_argument("--comment", type=str, default=None)
@@ -83,21 +81,19 @@ if __name__ == '__main__':
 
     transforms = build_transforms(args)
     print("Loading train data")
-    train_dataset = ReferencePanelDataset(mixed_h5=args.train_mixed,
+    train_dataset = ReferencePanelDataset(mixed_file_path=args.train_mixed,
                                           reference_panel_h5=args.train_ref_panel,
                                           reference_panel_vcf=args.reference,
                                           reference_panel_map=args.map,
-                                          n_classes=args.n_classes,
                                           n_refs_per_class=args.n_refs,
                                           transforms=transforms)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate)
 
     print("Loading validation data")
-    valid_dataset = ReferencePanelDataset(mixed_h5=args.valid_mixed,
+    valid_dataset = ReferencePanelDataset(mixed_file_path=args.valid_mixed,
                                           reference_panel_h5=args.valid_ref_panel,
                                           reference_panel_vcf=args.reference,
                                           reference_panel_map=args.map,
-                                          n_classes=args.n_classes,
                                           n_refs_per_class=args.n_refs,
                                           transforms=transforms)
 

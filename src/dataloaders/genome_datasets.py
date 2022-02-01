@@ -155,7 +155,10 @@ class ReferencePanel:
             reference_samples_names[ancestry] = []
             for i in indexes:
                 reference_samples[ancestry].append(self.reference_vcf[i])
-                reference_samples_names[ancestry].append(self.samples_list[i])
+                if self.samples_list is not None:
+                    reference_samples_names[ancestry].append(self.samples_list[i])
+                else:
+                    reference_samples_names[ancestry].append(None)
             reference_samples = {x: np.array(reference_samples[x]) for x in
                                  reference_samples.keys()}
 
@@ -186,7 +189,8 @@ class ReferencePanelDataset(Dataset):
         if reference_panel_h5:
             print("Loading data from .h5 file", reference_panel_h5)
             reference_panel_snps, reference_panel_labels = load_refpanel_from_h5py(reference_panel_h5)
-            samples_list = None
+            ancestry_names = samples_list = info = None
+
         else:
             print("Loading data from .vcf file", reference_panel_vcf)
             reference_panel_snps, reference_panel_labels, samples_list, ancestry_names, info = load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_map)
