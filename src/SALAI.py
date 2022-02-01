@@ -10,7 +10,7 @@ import torch
 from stepsagnostic import inference
 from models import AgnosticModel
 from dataloaders import ReferencePanelDataset, reference_panel_collate
-from stepsagnostic import build_transforms, ReshapedCrossEntropyLoss
+from stepsagnostic import build_transforms, ReshapedCrossEntropyLoss, get_meta_data, write_msp_tsv, msp_to_lai
 
 parser = argparse.ArgumentParser()
 
@@ -63,10 +63,30 @@ if __name__ == '__main__':
 
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate, shuffle=False)
 
+    info = test_dataset.info
+
     criterion = ReshapedCrossEntropyLoss()
-    predicted_classes, ibd = inference(model, test_loader, args)
+    predicted_classes, predicted_classes_window, ibd = inference(model, test_loader, args)
 
     os.mkdir(args.out_folder)
 
+
     np.save(args.out_folder + '/ancestry_prediction', predicted_classes.cpu().numpy())
     np.save(args.out_folder + '/descendant_prediction', ibd.cpu())
+
+    chm = info['chm'][0]
+    pos = info['pos']
+    n_seq, n_wind = predicted_classes_window.shape
+    wind_size = model.base_model.window_size
+
+    predicted_classes_window = predicted_classes_window.cpu().numpy()
+
+    query_samples = np.array(test_dataset.samples_list)
+    populations = np.array(test_dataset.ancestry_names)
+
+    np.save(args.out_folder + '/population_ids', populations)
+    np.save(args.out_folder + '/founder_ids', query_samples)
+
+    meta = get_meta_data(chm, pos, pos, n_wind, wind_size)
+    write_msp_tsv(args.out_folder, meta, predicted_classes_window, populations, query_samples)
+    msp_to_lai(args.out_folder + "/predictions.msp.tsv", pos, lai_file=args.out_folder + "/predictions.lai")

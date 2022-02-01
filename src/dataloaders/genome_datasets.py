@@ -100,7 +100,7 @@ def load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_samplemap):
 
     snps = snps.reshape(snps.shape[0] * 2, -1)
 
-    return snps, ancestry_labels, samples_list_upsampled
+    return snps, ancestry_labels, samples_list_upsampled, ancestry_names, info
 
 def vcf_to_npy(vcf_file):
     vcf_data = allel.read_vcf(vcf_file)
@@ -186,11 +186,13 @@ class ReferencePanelDataset(Dataset):
         if reference_panel_h5:
             print("Loading data from .h5 file", reference_panel_h5)
             reference_panel_snps, reference_panel_labels = load_refpanel_from_h5py(reference_panel_h5)
-            sample_list = None
+            samples_list = None
         else:
             print("Loading data from .vcf file", reference_panel_vcf)
-            reference_panel_snps, reference_panel_labels, samples_list = load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_map)
+            reference_panel_snps, reference_panel_labels, samples_list, ancestry_names, info = load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_map)
 
+        self.samples_list = samples_list
+        self.ancestry_names = ancestry_names
         self.reference_panel = ReferencePanel(reference_panel_snps, reference_panel_labels, n_refs_per_class, samples_list=samples_list)
 
         try:
@@ -206,6 +208,7 @@ class ReferencePanelDataset(Dataset):
             self.mixed_labels = None
 
         self.transforms = transforms
+        self.info = info
 
     def __len__(self):
         return self.mixed_vcf.shape[0]

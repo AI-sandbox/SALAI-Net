@@ -1,5 +1,8 @@
 import torch
 import pickle
+import numpy as np
+from collections import Counter
+import pandas as pd
 
 import torch.nn as nn
 
@@ -153,7 +156,6 @@ def correct_max_indices(max_indices_batch, ref_panel_idx_batch):
 
     return max_indices_batch
 
-
 def compute_ibd(output):
 
     all_ibd = []
@@ -171,3 +173,87 @@ def compute_ibd(output):
     return all_ibd
 
 
+def get_meta_data(chm, model_pos, query_pos, n_wind, wind_size, gen_map_df=None):
+    """
+    from LAI-Net code
+    Transforms the predictions on a window level to a .msp file format.
+        - chm: chromosome number
+        - model_pos: physical positions of the model input SNPs in basepair units
+        - query_pos: physical positions of the query input SNPs in basepair units
+        - n_wind: number of windows in model
+        - wind_size: size of each window in the model
+        - genetic_map_file: the input genetic map file
+    """
+
+    model_chm_len = len(model_pos)
+
+    # chm
+    chm_array = [chm] * n_wind
+
+    # start and end pyshical positions
+    if model_chm_len % wind_size == 0:
+        spos_idx = np.arange(0, model_chm_len, wind_size)  # [:-1]
+        epos_idx = np.concatenate([np.arange(0, model_chm_len, wind_size)[1:], np.array([model_chm_len])]) - 1
+    else:
+        spos_idx = np.arange(0, model_chm_len, wind_size)[:-1]
+        epos_idx = np.concatenate([np.arange(0, model_chm_len, wind_size)[1:-1], np.array([model_chm_len])]) - 1
+
+    spos = model_pos[spos_idx]
+    epos = model_pos[epos_idx]
+
+    sgpos = [1] * len(spos)
+    egpos = [1] * len(epos)
+
+    # number of query snps in interval
+    wind_index = [min(n_wind - 1, np.where(q == sorted(np.concatenate([epos, [q]])))[0][0]) for q in query_pos]
+    window_count = Counter(wind_index)
+    n_snps = [window_count[w] for w in range(n_wind)]
+
+    # print(len(chm_array), len(spos), len(epos), len(sgpos), len(egpos), len(n_snps))
+    # Concat with prediction table
+    meta_data = np.array([chm_array, spos, epos, sgpos, egpos, n_snps]).T
+    meta_data_df = pd.DataFrame(meta_data)
+    meta_data_df.columns = ["chm", "spos", "epos", "sgpos", "egpos", "n snps"]
+
+    return meta_data_df
+
+
+def write_msp_tsv(output_folder, meta_data, pred_labels, populations, query_samples, write_population_code=False):
+
+    msp_data = np.concatenate([np.array(meta_data), pred_labels.T], axis=1).astype(str)
+
+    with open(output_folder + "/predictions.msp.tsv", 'w') as f:
+        if write_population_code:
+            # first line (comment)
+            f.write("#Subpopulation order/codes: ")
+            f.write("\t".join([str(pop) + "=" + str(i) for i, pop in enumerate(populations)]) + "\n")
+        # second line (comment/header)
+        f.write("#" + "\t".join(meta_data.columns) + "\t")
+        f.write("\t".join([str(s) for s in np.concatenate([[s + ".0", s + ".1"] for s in query_samples])]) + "\n")
+        # rest of the lines (data)
+        for l in range(msp_data.shape[0]):
+            f.write("\t".join(msp_data[l, :]))
+            f.write("\n")
+
+    return
+
+
+def msp_to_lai(msp_file, positions, lai_file=None):
+    msp_df = pd.read_csv(msp_file, sep="\t", comment="#", header=None)
+    data_window = np.array(msp_df.iloc[:, 6:])
+    n_reps = msp_df.iloc[:, 5].to_numpy()
+    assert np.sum(n_reps) == len(positions)
+    data_snp = np.concatenate([np.repeat([row], repeats=n_reps[i], axis=0) for i, row in enumerate(data_window)])
+
+    with open(msp_file) as f:
+        first_line = f.readline()
+        second_line = f.readline()
+
+    header = second_line[:-1].split("\t")
+    samples = header[6:]
+    df = pd.DataFrame(data_snp, columns=samples, index=positions)
+
+    if lai_file is not None:
+        with open(lai_file, "w") as f:
+            f.write(first_line)
+        df.to_csv(lai_file, sep="\t", mode='a', index_label="position")

@@ -54,11 +54,10 @@ if __name__ == '__main__':
 
     transforms = build_transforms(args)
 
-    test_dataset = ReferencePanelDataset(mixed_h5=args.test_mixed,
+    test_dataset = ReferencePanelDataset(mixed_file_path=args.test_mixed,
                                          reference_panel_h5=args.ref_panel,
                                          reference_panel_vcf=args.reference,
                                          reference_panel_map=args.map,
-                                         # n_classes=args.n_classes,
                                          n_refs_per_class=args.n_refs,
                                          transforms=transforms)
 

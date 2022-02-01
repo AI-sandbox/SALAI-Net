@@ -145,6 +145,7 @@ def inference(model, test_loader, args):
         model.eval().to(device)
 
         all_predictions = []
+        all_predictions_window = []
         all_ibd = []
 
         for i, batch in enumerate(test_loader):
@@ -154,13 +155,17 @@ def inference(model, test_loader, args):
             output['max_indices'] = correct_max_indices(output['max_indices'], batch['reference_idx'])
 
             ibd = compute_ibd(output)
+
             predicted_labels = torch.argmax(output['predictions'], dim=2)
+            predicted_labels_window = torch.argmax(output['out_smoother'], dim=1)
 
             all_predictions.append(predicted_labels)
+            all_predictions_window.append(predicted_labels_window)
             all_ibd.append(ibd)
 
         all_predictions = torch.cat(all_predictions, dim=0)
+        all_predictions_window = torch.cat(all_predictions_window, dim=0)
         all_ibd = torch.cat(all_ibd, dim=0)
 
-        return all_predictions, all_ibd
+        return all_predictions, all_predictions_window, all_ibd
 

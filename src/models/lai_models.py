@@ -80,7 +80,6 @@ class BaggingMaxPool(nn.Module):
             maxpooled = self.maxpool(selected)
 
             pooled_refs.append(maxpooled)
-        quit()
         pooled_refs = torch.cat(pooled_refs, dim=0)
         return self.averagepool(pooled_refs)
 
@@ -139,7 +138,7 @@ class BaseModel(nn.Module):
     def __init__(self, args):
         super(BaseModel, self).__init__()
         self.args = args
-
+        self.window_size = args.win_size
         self.inpref_oper = XOR()
         # old base_model
 
