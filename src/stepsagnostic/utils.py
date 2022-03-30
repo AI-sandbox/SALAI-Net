@@ -66,18 +66,15 @@ class ProgressSaver():
         return self.progress["epoch"][-1], self.progress["best_val_loss"][-1], self.progress["time"][-1]
 
 
-
 class ReshapedCrossEntropyLoss(nn.Module):
     def __init__(self):
         super(ReshapedCrossEntropyLoss, self).__init__()
         self.CELoss = nn.CrossEntropyLoss()
+        
     def forward(self, prediction, target):
 
         bs, seq_len, n_classes = prediction.shape
 
-        # print(prediction.shape)
-        # print(target.shape)
-        # quit()
         prediction = prediction.reshape(bs * seq_len, n_classes)
         target = target.reshape(bs * seq_len)
         loss = self.CELoss(prediction, target)

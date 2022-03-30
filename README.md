@@ -9,20 +9,21 @@ ancestries, given a reference panel of single-ancestry individuals.
 ## Install
 ### Native Linux
 1. Clone the repo
-   ```git clone []```
+   ```git clone https://github.com/AI-sandbox/SALAI-Net.git```
 2. Install dependencies
-```pip install -r requirements```. Check [pytorch.org]() for installation of the appropiate version.
+```pip install -r requirements```. Check [pytorch.org]() for installation of the appropiate version of pytorch and torchvision for your system.
 ### Docker
 ## Usage
 ### Download data and pretrained models.
+
 Data for the main results is available in 
-https://drive.google.com/file/d/13Ai_2L37INNs-WAMyuB8cMb_xPObG40r/view?usp=sharing
+https://drive.google.com/file/d/1GHZvlvdAUoFDYOUfFKhTtTHCCy8INZSM/view?usp=sharing
 
 Main model (for 1000G and dogs)
-and model for the Hapmap dataset are in https://drive.google.com/file/d/1FG67JzMq_1GhtLHnmnRxRSIy66Vhkg_K/view?usp=sharing
+and model for the Hapmap dataset are in models.tar.gz
 
 
-### Perform LAI on your data
+### Perform LAI
 
 
 
@@ -38,7 +39,15 @@ Arguments:
 
 usage example:
 
-```python src/SALAI.py --model-cp model/main_model/models/best_model.pth -q ```
+    python src/SALAI.py \
+        --model-cp models/main_model/models/best_model.pth \
+        -q published_data/dogs/128gen/vcf.vcf \
+        -r published_data/dogs/chr30_expt1_filtered.vcf.gz \
+        -m published_data/dogs/128gen/ref_panel/train2.map \
+        -o prediction_folder
+
+For whole genome data
+
 
 The code runs by default on GPU if it is available, otherwise it runs on CPU. To run on CPU when GPU is available, deactivate GPU usage by running ```export CUDA_VISIBLE_DEVICES=''``` before running SALAI
 
