@@ -46,8 +46,7 @@ usage example:
         -m published_data/dogs/128gen/ref_panel/train2.map \
         -o prediction_folder
 
-For whole genome data
-
+For whole genome data use ```main_model/models/best_model.pth``` and for shorter sequences like hapmap use ```hapmap_model/models/best_model.pth```
 
 The code runs by default on GPU if it is available, otherwise it runs on CPU. To run on CPU when GPU is available, deactivate GPU usage by running ```export CUDA_VISIBLE_DEVICES=''``` before running SALAI
 
