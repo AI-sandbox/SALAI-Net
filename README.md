@@ -5,8 +5,8 @@ deconvolution). In other words, you can perform LAI on any species or set of
 ancestries, given a reference panel of single-ancestry individuals.
 
 ![Template matching](Base_model_topk.drawio.png)
-Fig. 1: Novel template matching block.
 
+Fig. 1: Novel template matching block.
 
 
 ## Community
