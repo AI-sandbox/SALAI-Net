@@ -70,8 +70,7 @@ if __name__ == '__main__':
 
     os.mkdir(args.out_folder)
 
-
-    np.save(args.out_folder + '/ancestry_prediction', predicted_classes.cpu().numpy())
+    np.save(args.out_folder + '/ancestry_prediction', predicted_classes.cpu().numpy().astype(int))
     np.save(args.out_folder + '/descendant_prediction', ibd.cpu())
 
     chm = info['chm'][0]

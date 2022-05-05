@@ -4,9 +4,14 @@ SALAI-Net is a package for species-agnostic Local Ancestry Inference (or ancestr
 deconvolution). In other words, you can perform LAI on any species or set of 
 ancestries, given a reference panel of single-ancestry individuals.
 
+![Template matching](Base_model_topk.drawio.png)
+Fig. 1: Novel template matching block.
+
+
+
 ## Community
 
-## Install
+## Installation
 ### Native Linux
 1. Clone the repo
    ```git clone https://github.com/AI-sandbox/SALAI-Net.git```
