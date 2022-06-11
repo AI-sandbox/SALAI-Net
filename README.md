@@ -25,7 +25,8 @@ Data for the main results is available in
 https://drive.google.com/file/d/1GHZvlvdAUoFDYOUfFKhTtTHCCy8INZSM/view?usp=sharing
 
 Main model (for 1000G and dogs)
-and model for the Hapmap dataset are in models.tar.gz
+and model for the Hapmap dataset are in
+https://drive.google.com/file/d/1FG67JzMq_1GhtLHnmnRxRSIy66Vhkg_K/view?usp=sharing
 
 
 ### Perform LAI
