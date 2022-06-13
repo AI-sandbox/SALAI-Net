@@ -88,12 +88,12 @@ class TopKPool(nn.Module):
         super(TopKPool, self).__init__()
         self.k = k
     def forward(self, inp):
+
         k = self.k
         if inp.shape[0] < k:
             k=inp.shape[0]
-
         maximums, indices = torch.topk(inp, k=k, dim=0)
-
+        assert indices.max() < inp.shape[0]
         return maximums, indices[0]
 
 class AvgPool(nn.Module):
@@ -179,9 +179,7 @@ class BaseModel(nn.Module):
 
         max_indices_batch = torch.stack(max_indices_batch, dim=0)
 
-        out = out_
-        del out_
-        return out, max_indices_batch
+        return out_, max_indices_batch
 
 
 class AgnosticModel(nn.Module):

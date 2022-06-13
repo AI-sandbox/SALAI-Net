@@ -203,8 +203,8 @@ class ReferencePanelDataset(Dataset):
             mixed_file = h5py.File(mixed_file_path)
             self.mixed_vcf = mixed_file["vcf"]
             self.mixed_labels = mixed_file["labels"]
-        except:
 
+        except:
             snps = vcf_to_npy(mixed_file_path)
             n_seq, n_chann, n_snps = snps.shape
             snps = snps.reshape(n_seq * n_chann, n_snps)

@@ -140,16 +140,19 @@ def correct_max_indices(max_indices_batch, ref_panel_idx_batch):
     '''
 
     for n in range(len(max_indices_batch)):
+
         max_indices = max_indices_batch[n]
         ref_panel_idx = ref_panel_idx_batch[n]
         max_indices_ordered = [None] * len(ref_panel_idx.keys())
+
         for i, c in enumerate(ref_panel_idx.keys()):
-            max_indices_ordered[i] = max_indices[c]
+            max_indices_ordered[c] = max_indices[i]
         max_indices_ordered = torch.stack(max_indices_ordered)
 
         for i in range(max_indices.shape[0]):
             max_indices_ordered[i] = torch.take(torch.tensor(ref_panel_idx[i]), max_indices_ordered[i].cpu())
-        max_indices_batch[n] = max_indices_ordered
+
+        max_indices_batch[n] = max_indices_ordered[:]
 
     return max_indices_batch
 

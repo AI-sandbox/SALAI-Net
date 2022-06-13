@@ -142,6 +142,7 @@ def inference(model, test_loader, args):
             batch = to_device(batch, device)
 
             output = model(batch["mixed_vcf"], batch["ref_panel"])
+
             output['max_indices'] = correct_max_indices(output['max_indices'], batch['reference_idx'])
 
             ibd = compute_ibd(output)
