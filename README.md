@@ -11,6 +11,7 @@ Fig. 1: Novel template matching block.
 
 ## Full paper
 ECCB 2022 - Bioinformatics journal (Oxford Academics)
+
 https://academic.oup.com/bioinformatics/article-abstract/38/Supplement_2/ii27/6701999
 
 ###Citation
