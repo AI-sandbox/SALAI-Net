@@ -107,7 +107,7 @@ def vcf_to_npy(vcf_file):
     snps = vcf_data['calldata/GT'].transpose(1, 2, 0)
     samples = vcf_data['samples']
 
-    return snps
+    return snps, samples
 
 
 class ReferencePanel:
@@ -205,7 +205,7 @@ class ReferencePanelDataset(Dataset):
             self.mixed_labels = mixed_file["labels"]
 
         except:
-            snps = vcf_to_npy(mixed_file_path)
+            snps, self.query_sample_names = vcf_to_npy(mixed_file_path)
             n_seq, n_chann, n_snps = snps.shape
             snps = snps.reshape(n_seq * n_chann, n_snps)
             self.mixed_vcf = snps

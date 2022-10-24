@@ -80,7 +80,7 @@ if __name__ == '__main__':
 
     predicted_classes_window = predicted_classes_window.cpu().numpy()
 
-    query_samples = np.array(test_dataset.samples_list)
+    query_samples = np.array(test_dataset.query_sample_names)
     populations = np.array(test_dataset.ancestry_names)
 
     np.save(args.out_folder + '/population_ids', populations)
