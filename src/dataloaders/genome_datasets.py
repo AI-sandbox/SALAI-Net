@@ -35,7 +35,6 @@ class GenomeDataset(Dataset):
         }
 
         item = to_tensor(item)
-
         item = self.transforms(item)
         return item
 

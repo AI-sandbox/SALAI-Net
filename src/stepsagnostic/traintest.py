@@ -134,6 +134,7 @@ def inference(model, test_loader, args):
 
         model.eval().to(device)
 
+
         all_predictions = []
         all_predictions_window = []
         all_ibd = []
