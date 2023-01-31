@@ -109,8 +109,8 @@ def build_transforms(args):
 
     transforms_list = []
 
-    transforms_list.append(EncodeBinary())
-
+    # We do this at the level of
+    # transforms_list.append(EncodeBinary())
     transforms_list = transforms.Compose(transforms_list)
 
     return transforms_list
@@ -123,9 +123,10 @@ def to_device(item, device):
     if "mixed_labels" in item.keys():
         item["mixed_labels"] = item["mixed_labels"].to(device)
 
-    for i, panel in enumerate(item["ref_panel"]):
-        for anc in panel.keys():
-            item["ref_panel"][i][anc] = item["ref_panel"][i][anc].to(device)
+    if "ref_panel" in item.keys():
+        for i, panel in enumerate(item["ref_panel"]):
+            for anc in panel.keys():
+                item["ref_panel"][i][anc] = item["ref_panel"][i][anc].to(device)
 
     return item
 

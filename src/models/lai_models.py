@@ -55,7 +55,6 @@ class RefMaxPool(nn.Module):
 
     def forward(self, inp):
         maximums, indices = torch.max(inp, dim=0)
-        print(indices)
         return maximums.unsqueeze(0), indices
 
 class BaggingMaxPool(nn.Module):
@@ -78,8 +77,8 @@ class BaggingMaxPool(nn.Module):
             indices = torch.randint(low=0, high=int(total_n), size=(select_n,))
             selected = inp[indices, :]
             maxpooled = self.maxpool(selected)
-
             pooled_refs.append(maxpooled)
+
         pooled_refs = torch.cat(pooled_refs, dim=0)
         return self.averagepool(pooled_refs)
 
@@ -87,14 +86,27 @@ class TopKPool(nn.Module):
     def __init__(self, k):
         super(TopKPool, self).__init__()
         self.k = k
-    def forward(self, inp):
 
+    def shared_refpanel(self, inp):
+        k = min(self.k, inp.shape[1])
+        maximums, indices = torch.topk(inp, k=k, dim=1)
+
+        return maximums, indices
+
+    def samplewise_refpanel(self, inp):
         k = self.k
         if inp.shape[0] < k:
-            k=inp.shape[0]
+            k = inp.shape[0]
         maximums, indices = torch.topk(inp, k=k, dim=0)
         assert indices.max() < inp.shape[0]
         return maximums, indices[0]
+
+    def forward(self, inp, shared_refpanel):
+
+        if shared_refpanel:
+            return self.shared_refpanel(inp)
+        else:
+            return self.samplewise_refpanel(inp)
 
 class AvgPool(nn.Module):
     def __init__(self):
@@ -126,19 +138,33 @@ class AddPoolings(nn.Module):
         #self.weights=nn.Parameter(torch.ones(max_n).unsqueeze(1))
         self.weights=nn.Parameter(torch.rand(max_n).unsqueeze(1), requires_grad=True)
         # self.bias = nn.Parameter(torch.rand(max_n).unsqueeze(1), requires_grad=True)
-    def forward(self, inp):
 
+    def shared_refpanel(self, inp):
+        inp = inp * self.weights[:min(inp.shape[1], self.max_n)].unsqueeze(0)
+        inp = torch.sum(inp, dim=1, keepdim=False)
+
+        return inp
+
+    def samplewise_refpanel(self, inp):
         # inp = inp + self.bias[:min(inp.shape[0], self.max_n)]
         out = inp * self.weights[:min(inp.shape[0], self.max_n)]
         out = torch.sum(out, dim=0, keepdim=True)
-
         return out
 
+    def forward(self, inp, shared_refpanel):
+        if shared_refpanel:
+            return self.shared_refpanel(inp)
+        else:
+            return self.samplewise_refpanel(inp)
+
 class BaseModel(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, shared_refpanel=True):
         super(BaseModel, self).__init__()
         self.args = args
         self.window_size = args.win_size
+        self.shared_refpanel = shared_refpanel
+
+
         self.inpref_oper = XOR()
         # old base_model
 
@@ -151,15 +177,19 @@ class BaseModel(nn.Module):
             self.add_poolings = AddPoolings(max_n=args.topk_k)
         elif args.ref_pooling == "average":
             self.ref_pooling = AvgPool()
-
         else:
             raise ValueError('Wrong type of ref pooling')
 
 
     def forward(self, input_mixed, ref_panel):
+        out = fast_windowed_distances(input_mixed, dict(ref_panel), window_size=self.window_size)
+        indices = {}
+        for ancestry in out.keys():
+            out[ancestry], indices[ancestry] = self.ref_pooling(out[ancestry], shared_refpanel=True)
+            out[ancestry] = self.add_poolings(out[ancestry], shared_refpanel=True)
+        return out, indices
 
-        with torch.no_grad():
-            out = self.inpref_oper(input_mixed, ref_panel)
+        '''
         out_ = []
         max_indices_batch = []
         for x in out:
@@ -172,14 +202,14 @@ class BaseModel(nn.Module):
                     x_[c] = self.add_poolings(x_[c])
                 max_indices_element.append(max_indices)
 
-
             out_.append(x_)
             max_indices_element = torch.stack(max_indices_element, dim=0)
             max_indices_batch.append(max_indices_element)
 
         max_indices_batch = torch.stack(max_indices_batch, dim=0)
-
+        
         return out_, max_indices_batch
+        '''
 
 
 class AgnosticModel(nn.Module):
@@ -212,9 +242,8 @@ class AgnosticModel(nn.Module):
 
         out, max_indices = self.base_model(input_mixed, ref_panel)
 
-        out = stack_ancestries(out).to(next(self.parameters()).device)
-
-        out_basemodel = out
+        out = [out[anc] for anc in sorted(out.keys())]
+        out_basemodel = out = torch.stack(out, axis=1)
 
         out = self.dropout(out)
 
@@ -234,14 +263,39 @@ class AgnosticModel(nn.Module):
         return output
 
 
-def multiply_ref_panel_stack_ancestries(mixed, ref_panel):
-    all_refs = [None] * len(ref_panel.keys())
+def fast_windowed_distances(mixed, ref_panel, window_size):
+    bs, n_snps = mixed.shape
+    n_windows = n_snps // window_size
+    pad = n_snps % window_size
+    if pad > 0:
+        n_windows += 1
+        pad = window_size - pad
+        #pad = (pad // 2, pad - pad // 2)
+        pad = (0, int(pad))
     for ancestry in ref_panel.keys():
-        all_refs[ancestry] = ref_panel[ancestry]
-    #all_refs = [ref_panel[ancestry] for ancestry in ref_panel.keys()]
-    all_refs = torch.cat(all_refs, dim=0)
+        ref_panel[ancestry] = ref_panel[ancestry].unsqueeze(0) * mixed.unsqueeze(1)
+        if pad != 0:
+            ref_panel[ancestry] = f.pad(ref_panel[ancestry], pad)
+        ref_panel[ancestry] = ref_panel[ancestry].reshape(bs, -1, n_windows, window_size)
+        ref_panel[ancestry] = ref_panel[ancestry].mean(dim=3)
 
-    return all_refs * mixed.unsqueeze(0)
+    return ref_panel
+
+
+def fast_window_sum(inp, window_size):
+
+    bs, n_ref, n_snps = inp.shape
+    n_windows = n_snps // window_size
+
+    pad = n_snps % window_size
+    if pad != 0:
+        n_windows += 1
+        pad = window_size - pad
+        pad = (pad//2, pad - pad//2)
+        inp = f.pad(inp, pad)
+    inp = inp.reshape(bs, n_ref, n_windows, window_size)
+    inp = inp.sum(dim=3)
+    return inp
 
 def multiply_ref_panel(mixed, ref_panel):
     out = {
@@ -262,6 +316,7 @@ class XOR(nn.Module):
             for inp, ref in zip(input_mixed, ref_panel):
                 out.append(multiply_ref_panel(inp, ref))
         return out
+
 
 def interpolate_and_pad(inp, upsample_factor, target_len):
 

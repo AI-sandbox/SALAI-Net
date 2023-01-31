@@ -116,6 +116,7 @@ class ReferencePanel:
         self.reference_vcf = reference_panel_vcf
 
         self.samples_list = samples_list
+        self.shared_refpanel_cache = None
 
         reference_labels = reference_panel_labels
         reference_panel = {}
@@ -146,7 +147,11 @@ class ReferencePanel:
         reference_samples_idx = {}
 
         for ancestry in self.reference_panel_index_dict.keys():
-            n_samples = min(n_sample_per_class, len(self.reference_panel_index_dict[ancestry]))
+            ## If n_sample_per_class is smaller than zero we take them all.
+            if 0 < n_sample_per_class < len(self.reference_panel_index_dict[ancestry]):
+                n_samples = n_sample_per_class
+            else:
+                n_samples = len(self.reference_panel_index_dict[ancestry])
             indexes = random.sample(self.reference_panel_index_dict[ancestry],
                                     n_samples)
             reference_samples_idx[ancestry] = indexes
@@ -163,7 +168,36 @@ class ReferencePanel:
 
         return reference_samples, reference_samples_names, reference_samples_idx
 
-    def sample_reference_panel(self):
+    def take_all_refs(self):
+        if self.shared_refpanel_cache is None:
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            reference_samples = {}
+            reference_samples_names = {}
+            reference_samples_idx = {}
+
+            for ancestry in self.reference_panel_index_dict.keys():
+
+                n_samples = len(self.reference_panel_index_dict[ancestry])
+
+                indexes = self.reference_panel_index_dict[ancestry]
+                reference_samples_idx[ancestry] = indexes
+                reference_samples[ancestry] = torch.tensor(self.reference_vcf[indexes]).to(device)
+                reference_samples_names[ancestry] = [self.samples_list[i] for i in indexes]
+
+
+                if self.samples_list is not None:
+                    reference_samples_names[ancestry] = [self.samples_list[i] for i in indexes]
+                else:
+                    reference_samples_names[ancestry] = [None for i in indexes]
+
+            self.reference_vcf = None
+            self.shared_refpanel_cache = (reference_samples, reference_samples_names, reference_samples_idx)
+
+        return self.shared_refpanel_cache
+
+    def sample_reference_panel(self, shared_refpanel=False):
+        if shared_refpanel:
+            return self.take_all_refs()
         return self.sample_uniform_all_classes(n_sample_per_class=self.n_refs_per_class)
 
 def ref_pan_to_tensor(item):
@@ -173,8 +207,9 @@ def ref_pan_to_tensor(item):
     if "mixed_labels" in item.keys():
         item["mixed_labels"] = torch.tensor(item["mixed_labels"]).long()
 
-    for c in item["ref_panel"]:
-        item["ref_panel"][c] = torch.tensor(item["ref_panel"][c])
+    if "ref_panel" in item.keys():
+        for c in item["ref_panel"]:
+            item["ref_panel"][c] = torch.tensor(item["ref_panel"][c])
 
     return item
 
@@ -182,7 +217,7 @@ def ref_pan_to_tensor(item):
 class ReferencePanelDataset(Dataset):
     def __init__(self, mixed_file_path, reference_panel_h5,
                  reference_panel_vcf, reference_panel_map,
-                 n_refs_per_class, transforms):
+                 n_refs_per_class, transforms, shared_refpanel=False):
 
         # if reference_panel_h5:
         if reference_panel_h5:
@@ -194,8 +229,13 @@ class ReferencePanelDataset(Dataset):
             print("Loading data from .vcf file", reference_panel_vcf)
             reference_panel_snps, reference_panel_labels, samples_list, ancestry_names, info = load_refpanel_from_vcfmap(reference_panel_vcf, reference_panel_map)
 
+        reference_panel_snps = reference_panel_snps * 2 - 1
+
         self.samples_list = samples_list
         self.ancestry_names = ancestry_names
+
+        self.shared_refpanel = shared_refpanel
+        if shared_refpanel: n_refs_per_class = -1
         self.reference_panel = ReferencePanel(reference_panel_snps, reference_panel_labels, n_refs_per_class, samples_list=samples_list)
 
         try:
@@ -210,6 +250,7 @@ class ReferencePanelDataset(Dataset):
             self.mixed_vcf = snps
             self.mixed_labels = None
 
+        self.mixed_vcf = self.mixed_vcf * 2 - 1
         self.transforms = transforms
         self.info = info
 
@@ -224,7 +265,8 @@ class ReferencePanelDataset(Dataset):
         if self.mixed_labels is not None:
             item["mixed_labels"] = self.mixed_labels[index]
 
-        item["ref_panel"], item['reference_names'], item['reference_idx'] = self.reference_panel.sample_reference_panel()
+        if not self.shared_refpanel:
+            item["ref_panel"], item['reference_names'], item['reference_idx'] = self.reference_panel.sample_reference_panel()
 
         item = ref_pan_to_tensor(item)
 
@@ -234,20 +276,23 @@ class ReferencePanelDataset(Dataset):
 
 
 def reference_panel_collate(batch):
-    ref_panel = []
-    reference_names = []
-    reference_idx = []
-    for x in batch:
-        ref_panel.append(x["ref_panel"])
-        reference_names.append(x["reference_names"])
-        reference_idx.append(x['reference_idx'])
-        del x["ref_panel"]
-        del x["reference_names"]
-        del x['reference_idx']
+    if "ref_panel" in batch[0].keys():
+        ref_panel = []
+        reference_names = []
+        reference_idx = []
+        for x in batch:
+            ref_panel.append(x["ref_panel"])
+            reference_names.append(x["reference_names"])
+            reference_idx.append(x['reference_idx'])
+            del x["ref_panel"]
+            del x["reference_names"]
+            del x['reference_idx']
+        batch["ref_panel"] = ref_panel
+
 
     batch = default_collate(batch)
-    batch["ref_panel"] = ref_panel
-    batch["reference_names"] = reference_names
-    batch["reference_idx"] = reference_idx
+    if "ref_panel" in batch.keys():
+        batch["reference_names"] = reference_names
+        batch["reference_idx"] = reference_idx
 
     return batch

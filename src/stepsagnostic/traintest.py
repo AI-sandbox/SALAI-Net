@@ -1,4 +1,5 @@
 import torch
+import tqdm
 
 from .utils import ancestry_accuracy, ProgressSaver, AverageMeter, ReshapedCrossEntropyLoss,\
     adjust_learning_rate, to_device, correct_max_indices, compute_ibd
@@ -126,7 +127,7 @@ def validate(model, val_loader, criterion, args):
 
         return acc, val_loss.get_average()
 
-def inference(model, test_loader, args):
+def inference(model, test_loader, args, shared_refpanel):
 
     with torch.no_grad():
 
@@ -139,25 +140,31 @@ def inference(model, test_loader, args):
         all_predictions_window = []
         all_ibd = []
 
-        for i, batch in enumerate(test_loader):
+        for i, batch in tqdm.tqdm(enumerate(test_loader)):
             batch = to_device(batch, device)
 
-            output = model(batch["mixed_vcf"], batch["ref_panel"])
+            if shared_refpanel:
+                refpanel, reference_names, reference_idx = test_loader.dataset.reference_panel.sample_reference_panel(shared_refpanel=True)
+            else:
+                refpanel = batch["ref_panel"]
 
-            output['max_indices'] = correct_max_indices(output['max_indices'], batch['reference_idx'])
+            output = model(batch["mixed_vcf"], refpanel)
 
-            ibd = compute_ibd(output)
+            #output['max_indices'] = correct_max_indices(output['max_indices'], batch['reference_idx'])
+
+            #ibd = compute_ibd(output)
 
             predicted_labels = torch.argmax(output['predictions'], dim=2)
             predicted_labels_window = torch.argmax(output['out_smoother'], dim=1)
 
-            all_predictions.append(predicted_labels)
-            all_predictions_window.append(predicted_labels_window)
-            all_ibd.append(ibd)
+            all_predictions.append(predicted_labels.detach().cpu())
+            all_predictions_window.append(predicted_labels_window.detach().cpu())
+            #all_ibd.append(ibd)
 
         all_predictions = torch.cat(all_predictions, dim=0)
         all_predictions_window = torch.cat(all_predictions_window, dim=0)
-        all_ibd = torch.cat(all_ibd, dim=0)
+        #all_ibd = torch.cat(all_ibd, dim=0)
 
+        return all_predictions, all_predictions_window, None
         return all_predictions, all_predictions_window, all_ibd
 

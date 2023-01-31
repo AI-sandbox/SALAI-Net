@@ -54,24 +54,28 @@ if __name__ == '__main__':
     elif args.query:
         mixed_file_path = args.query
 
+    # This speeds up computations.
+    shared_refpanel = True
+
     test_dataset = ReferencePanelDataset(mixed_file_path=mixed_file_path,
                                          reference_panel_h5=args.ref_panel,
                                          reference_panel_vcf=args.reference,
                                          reference_panel_map=args.map,
                                          n_refs_per_class=model_args.n_refs,
-                                         transforms=transforms)
+                                         transforms=transforms,
+                                         shared_refpanel=shared_refpanel)
 
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate, shuffle=False)
 
     info = test_dataset.info
 
     criterion = ReshapedCrossEntropyLoss()
-    predicted_classes, predicted_classes_window, ibd = inference(model, test_loader, args)
+    predicted_classes, predicted_classes_window, _ = inference(model, test_loader, args, shared_refpanel=shared_refpanel)
 
     os.mkdir(args.out_folder)
 
     np.save(args.out_folder + '/ancestry_prediction', predicted_classes.cpu().numpy().astype(int))
-    np.save(args.out_folder + '/descendant_prediction', ibd.cpu())
+    #np.save(args.out_folder + '/descendant_prediction', ibd.cpu())
 
     chm = info['chm'][0]
     pos = info['pos']
@@ -86,6 +90,6 @@ if __name__ == '__main__':
     np.save(args.out_folder + '/population_ids', populations)
     np.save(args.out_folder + '/founder_ids', query_samples)
 
-    meta = get_meta_data(chm, pos, pos, n_wind, wind_size)
-    write_msp_tsv(args.out_folder, meta, predicted_classes_window, populations, query_samples)
-    msp_to_lai(args.out_folder + "/predictions.msp.tsv", pos, lai_file=args.out_folder + "/predictions.lai")
+    #meta = get_meta_data(chm, pos, pos, n_wind, wind_size)
+    #write_msp_tsv(args.out_folder, meta, predicted_classes_window, populations, query_samples)
+    #msp_to_lai(args.out_folder + "/predictions.msp.tsv", pos, lai_file=args.out_folder + "/predictions.lai")
