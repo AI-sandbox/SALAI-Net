@@ -196,8 +196,8 @@ def get_meta_data(chm, model_pos, query_pos, n_wind, wind_size, gen_map_df=None)
         spos_idx = np.arange(0, model_chm_len, wind_size)  # [:-1]
         epos_idx = np.concatenate([np.arange(0, model_chm_len, wind_size)[1:], np.array([model_chm_len])]) - 1
     else:
-        spos_idx = np.arange(0, model_chm_len, wind_size)[:-1]
-        epos_idx = np.concatenate([np.arange(0, model_chm_len, wind_size)[1:-1], np.array([model_chm_len])]) - 1
+        spos_idx = np.arange(0, model_chm_len, wind_size)
+        epos_idx = np.concatenate([np.arange(0, model_chm_len, wind_size)[1:], np.array([model_chm_len])]) - 1
 
     spos = model_pos[spos_idx]
     epos = model_pos[epos_idx]
@@ -212,8 +212,10 @@ def get_meta_data(chm, model_pos, query_pos, n_wind, wind_size, gen_map_df=None)
 
     # print(len(chm_array), len(spos), len(epos), len(sgpos), len(egpos), len(n_snps))
     # Concat with prediction table
+
     meta_data = np.array([chm_array, spos, epos, sgpos, egpos, n_snps]).T
     meta_data_df = pd.DataFrame(meta_data)
+
     meta_data_df.columns = ["chm", "spos", "epos", "sgpos", "egpos", "n snps"]
 
     return meta_data_df
@@ -258,3 +260,4 @@ def msp_to_lai(msp_file, positions, lai_file=None):
         with open(lai_file, "w") as f:
             f.write(first_line)
         df.to_csv(lai_file, sep="\t", mode='a', index_label="position")
+

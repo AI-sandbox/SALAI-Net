@@ -19,6 +19,7 @@ def to_tensor(item):
     return item
 
 class GenomeDataset(Dataset):
+
     def __init__(self, data, transforms):
         data = np.load(data)
         self.vcf_data = data["vcf"].astype(np.float)
@@ -43,6 +44,7 @@ def load_refpanel_from_h5py(reference_panel_h5):
 
     reference_panel_file = h5py.File(reference_panel_h5, "r")
     return reference_panel_file["vcf"], reference_panel_file["labels"]
+
 
 def load_map_file(map_file):
     sample_map = pd.read_csv(map_file, sep="\t", header=None)
@@ -244,10 +246,9 @@ class ReferencePanelDataset(Dataset):
             self.mixed_labels = mixed_file["labels"]
 
         except:
-            snps, self.query_sample_names = vcf_to_npy(mixed_file_path)
-            n_seq, n_chann, n_snps = snps.shape
-            snps = snps.reshape(n_seq * n_chann, n_snps)
-            self.mixed_vcf = snps
+            self.mixed_vcf, self.query_sample_names = vcf_to_npy(mixed_file_path)
+            n_seq, n_chann, n_snps = self.mixed_vcf.shape
+            self.mixed_vcf = self.mixed_vcf.reshape(n_seq * n_chann, n_snps)
             self.mixed_labels = None
 
         self.mixed_vcf = self.mixed_vcf * 2 - 1
@@ -272,8 +273,8 @@ class ReferencePanelDataset(Dataset):
 
         if self.transforms is not None:
             item = self.transforms(item)
-        return item
 
+        return item
 
 def reference_panel_collate(batch):
     if "ref_panel" in batch[0].keys():

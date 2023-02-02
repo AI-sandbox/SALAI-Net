@@ -164,6 +164,7 @@ class BaseModel(nn.Module):
         self.window_size = args.win_size
         self.shared_refpanel = shared_refpanel
 
+        self.batch_size_refpanel = args.batch_size_refpanel
 
         self.inpref_oper = XOR()
         # old base_model
@@ -180,9 +181,9 @@ class BaseModel(nn.Module):
         else:
             raise ValueError('Wrong type of ref pooling')
 
-
     def forward(self, input_mixed, ref_panel):
-        out = fast_windowed_distances(input_mixed, dict(ref_panel), window_size=self.window_size)
+
+        out = fast_windowed_distances(input_mixed, dict(ref_panel), window_size=self.window_size, ref_panel_bs=self.batch_size_refpanel)
         indices = {}
         for ancestry in out.keys():
             out[ancestry], indices[ancestry] = self.ref_pooling(out[ancestry], shared_refpanel=True)
@@ -236,6 +237,7 @@ class AgnosticModel(nn.Module):
             print("No dropout")
             self.dropout = nn.Sequential()
 
+
     def forward(self, input_mixed, ref_panel):
 
         seq_len = input_mixed.shape[-1]
@@ -262,8 +264,7 @@ class AgnosticModel(nn.Module):
 
         return output
 
-
-def fast_windowed_distances(mixed, ref_panel, window_size):
+def fast_windowed_distances(mixed, ref_panel, window_size, ref_panel_bs):
     bs, n_snps = mixed.shape
     n_windows = n_snps // window_size
     pad = n_snps % window_size
@@ -273,18 +274,30 @@ def fast_windowed_distances(mixed, ref_panel, window_size):
         #pad = (pad // 2, pad - pad // 2)
         pad = (0, int(pad))
     for ancestry in ref_panel.keys():
+        out = []
+
+        # print(ref_panel[ancestry].shape)
+        # print(mixed.shape)
+        # ref_panel[ancestry] = f.pad(ref_panel[ancestry], pad)
+        # mixed = f.pad(mixed, pad)
+        # print(ref_panel[ancestry].shape)
+        # print(mixed.shape)
+        # quit()
+
         ref_panel[ancestry] = ref_panel[ancestry].unsqueeze(0) * mixed.unsqueeze(1)
         if pad != 0:
             ref_panel[ancestry] = f.pad(ref_panel[ancestry], pad)
         ref_panel[ancestry] = ref_panel[ancestry].reshape(bs, -1, n_windows, window_size)
         ref_panel[ancestry] = ref_panel[ancestry].mean(dim=3)
 
+
+
     return ref_panel
 
 
 def fast_window_sum(inp, window_size):
 
-    bs, n_ref, n_snps = inp.shape
+    bs, n_ref, n_snps = inp.shap
     n_windows = n_snps // window_size
 
     pad = n_snps % window_size

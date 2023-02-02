@@ -14,8 +14,6 @@ def train(model, train_loader, valid_loader, args):
     model.to(device)
 
     criterion = ReshapedCrossEntropyLoss()
-
-
     # Basic
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
@@ -135,7 +133,6 @@ def inference(model, test_loader, args, shared_refpanel):
 
         model.eval().to(device)
 
-
         all_predictions = []
         all_predictions_window = []
         all_ibd = []
@@ -157,14 +154,18 @@ def inference(model, test_loader, args, shared_refpanel):
             predicted_labels = torch.argmax(output['predictions'], dim=2)
             predicted_labels_window = torch.argmax(output['out_smoother'], dim=1)
 
-            all_predictions.append(predicted_labels.detach().cpu())
-            all_predictions_window.append(predicted_labels_window.detach().cpu())
+            all_predictions.append(predicted_labels.detach().int().cpu())
+            all_predictions_window.append(predicted_labels_window.detach().int().cpu())
             #all_ibd.append(ibd)
 
-        all_predictions = torch.cat(all_predictions, dim=0)
-        all_predictions_window = torch.cat(all_predictions_window, dim=0)
+
         #all_ibd = torch.cat(all_ibd, dim=0)
+        del model
+        del test_loader
+        del batch
+        del refpanel
 
         return all_predictions, all_predictions_window, None
         return all_predictions, all_predictions_window, all_ibd
+
 

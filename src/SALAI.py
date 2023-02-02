@@ -27,20 +27,23 @@ parser.add_argument("--map", '-m', default=False)
 parser.add_argument('--out-folder', '-o', default='outputs/default')
 
 parser.add_argument("-b", "--batch-size", type=int, default=16)
+parser.add_argument("-bref", "--batch-size-refpanel", type=int, default=16)
 
-if __name__ == '__main__':
+
+def main():
 
     args = parser.parse_args()
-
+    print('CUDA AVAILABLE: ', torch.cuda.is_available())
     if os.path.isdir(args.out_folder):
         raise Exception("Experiment name " + args.out_folder + " already exists.")
 
-
-    print(args)
     if not args.model_args:
         args.model_args = args.model_cp.replace('models/best_model.pth', 'args.pckl')
     with open(args.model_args, "rb") as f:
         model_args = pickle.load(f)
+        model_args.batch_size_refpanel = args.batch_size_refpanel
+        print(model_args)
+
 
     model = AgnosticModel(model_args)
 
@@ -67,11 +70,23 @@ if __name__ == '__main__':
 
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=reference_panel_collate, shuffle=False)
 
-    info = test_dataset.info
 
-    criterion = ReshapedCrossEntropyLoss()
+
     predicted_classes, predicted_classes_window, _ = inference(model, test_loader, args, shared_refpanel=shared_refpanel)
 
+    wind_size = model.base_model.window_size
+
+    query_samples = np.array(test_dataset.query_sample_names)
+    populations = np.array(test_dataset.ancestry_names)
+    info = test_dataset.info
+    del test_dataset
+    del model
+    del test_loader
+    import gc
+    gc.collect()
+
+    predicted_classes = torch.cat(predicted_classes, dim=0)
+    predicted_classes_window = torch.cat(predicted_classes_window, dim=0)
     os.mkdir(args.out_folder)
 
     np.save(args.out_folder + '/ancestry_prediction', predicted_classes.cpu().numpy().astype(int))
@@ -80,16 +95,15 @@ if __name__ == '__main__':
     chm = info['chm'][0]
     pos = info['pos']
     n_seq, n_wind = predicted_classes_window.shape
-    wind_size = model.base_model.window_size
 
     predicted_classes_window = predicted_classes_window.cpu().numpy()
-
-    query_samples = np.array(test_dataset.query_sample_names)
-    populations = np.array(test_dataset.ancestry_names)
 
     np.save(args.out_folder + '/population_ids', populations)
     np.save(args.out_folder + '/founder_ids', query_samples)
 
-    #meta = get_meta_data(chm, pos, pos, n_wind, wind_size)
-    #write_msp_tsv(args.out_folder, meta, predicted_classes_window, populations, query_samples)
-    #msp_to_lai(args.out_folder + "/predictions.msp.tsv", pos, lai_file=args.out_folder + "/predictions.lai")
+    meta = get_meta_data(chm, pos, pos, n_wind, wind_size)
+    write_msp_tsv(args.out_folder, meta, predicted_classes_window, populations, query_samples)
+    msp_to_lai(args.out_folder+ "/predictions.msp.tsv", pos, lai_file=args.out_folder + "/predictions.lai")
+
+if __name__ == '__main__':
+    main()
