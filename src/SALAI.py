@@ -27,7 +27,7 @@ parser.add_argument("--map", '-m', default=False)
 parser.add_argument('--out-folder', '-o', default='outputs/default')
 
 parser.add_argument("-b", "--batch-size", type=int, default=16)
-parser.add_argument("-bref", "--batch-size-refpanel", type=int, default=16)
+parser.add_argument("-bref", "--batch-size-refpanel", type=int, default=7)
 
 
 def main():

@@ -273,24 +273,29 @@ def fast_windowed_distances(mixed, ref_panel, window_size, ref_panel_bs):
         pad = window_size - pad
         #pad = (pad // 2, pad - pad // 2)
         pad = (0, int(pad))
-    for ancestry in ref_panel.keys():
-        out = []
-
-        # print(ref_panel[ancestry].shape)
-        # print(mixed.shape)
-        # ref_panel[ancestry] = f.pad(ref_panel[ancestry], pad)
-        # mixed = f.pad(mixed, pad)
-        # print(ref_panel[ancestry].shape)
-        # print(mixed.shape)
-        # quit()
-
-        ref_panel[ancestry] = ref_panel[ancestry].unsqueeze(0) * mixed.unsqueeze(1)
-        if pad != 0:
+        mixed = f.pad(mixed, pad)
+        for ancestry in ref_panel.keys():
             ref_panel[ancestry] = f.pad(ref_panel[ancestry], pad)
-        ref_panel[ancestry] = ref_panel[ancestry].reshape(bs, -1, n_windows, window_size)
-        ref_panel[ancestry] = ref_panel[ancestry].mean(dim=3)
+
+    for ancestry in ref_panel.keys():
+
+        out = []
+        i = 0
+        while i<ref_panel[ancestry].shape[0]:
+
+            chunk = ref_panel[ancestry][i:i+ref_panel_bs]
+
+            chunk = chunk.unsqueeze(0) * mixed.unsqueeze(1)
+
+            chunk = chunk.reshape(bs, -1, n_windows, window_size)
+            chunk = chunk.mean(dim=3)
+
+            out.append(chunk)
+            i += ref_panel_bs
 
 
+        ref_panel[ancestry] = torch.cat(out, dim=1)
+        del out
 
     return ref_panel
 
